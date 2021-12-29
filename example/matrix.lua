@@ -19,7 +19,6 @@ end
 function Matrix:tick()
 	for i = (#self.data)-1, 1,-1 do
 		s = self.data[i]
-		--print(s.x)
 		if (s.y > self.height+self.segments) then
 			table.remove(self.data, i)
 		else

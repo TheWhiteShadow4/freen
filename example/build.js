@@ -11,9 +11,10 @@ const config = JSON.parse(fs.readFileSync('package.json')).build;
 process.chdir(path.dirname(process.argv[1]));
 console.log("location:", process.cwd());
 
-// Externer Pfad in dem Bibliotheken für requires gesucht werden.
+// Pfade in denen Bibliotheken für requires gesucht werden.
 const user_libs = config.libs.map(p => `${path.resolve(p)}/?.lua`);
-const libs = ['?', '?.lua', process.env['LUA_PATH']].concat(user_libs);
+const libs = ['?', '?.lua'].concat(user_libs);
+if (process.env['LUA_PATH']) libs.push(process.env['LUA_PATH']);
 const entry = (process.argv.length > 2) ? process.argv[2] : './init.lua';
 const entry_path = path.resolve(entry);
 process.chdir(path.dirname(entry_path));
