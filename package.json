@@ -1,0 +1,24 @@
+{
+	"name": "tws.freen.test",
+	"version": "1.0.0",
+	"description": "Freen Screen Test",
+	"scripts": {
+		"build": "node example/build.js init.lua"
+	},
+	"author": "TheWhiteShadow",
+	"license": "ISC",
+	"dependencies": {
+		"luabundle": "^1.6.0",
+		"luamin": "^1.0.4",
+		"node-watch": "^0.7.2"
+	},
+	"build": {
+		"main": "init.lua",
+		"bundle": "bundle.lua",
+		"metadata": false,
+		"minify": false,
+		"libs": [
+			"lua"
+		]
+	}
+}
