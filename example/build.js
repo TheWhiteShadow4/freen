@@ -3,8 +3,6 @@ const path = require("path");
 const luabundle = require('luabundle')
 const luamin = require('luamin');
 const watch = require('node-watch');
-const execSync = require('child_process').execSync;
-
 
 const config = JSON.parse(fs.readFileSync('package.json')).build;
 
@@ -39,7 +37,6 @@ function compile()
 		// Erstellt eine Bundledatei aus allen require Dateien.
 		
 		data = luabundle.bundleString(data, {
-			//(paths:['?', '?.lua',  `${libs}/?.lua`, process.env['LUA_PATH']],
 			paths: libs,
 			metadata: config.metadata
 		});
@@ -47,7 +44,7 @@ function compile()
 		if (config.minify) data = luamin.minify(data);
 		fs.writeFileSync(bundle_file, data);
 		
-		console.log("Compilation complete.")
+		console.log('\x1b[32m', "Compilation complete.", '\x1b[0m');
 	}
 	catch(err)
 	{
@@ -55,10 +52,7 @@ function compile()
 	}
 }
 
-compile();
-console.log("Bundle:", bundle_file)
-/*
-watch('./', {
+watch_config = {
 	recursive: true, filter(f, skip) {
 		// skip node_modules and build
 		if (/node_modules/.test(f) || /temp/.test(f) || /build/.test(f)) return skip;
@@ -69,5 +63,12 @@ watch('./', {
 	}}, function(evt, name) {
 	console.log('%s changed.', name);
 	compile();
-});
-*/
+}
+
+compile();
+console.log('\x1b[1m',"Bundle:", bundle_file, '\x1b[0m');
+if (config.watch)
+{
+	console.log('\x1b[34m', "watching...", '\x1b[0m');
+	watch('./', watch_config);
+}

@@ -15,9 +15,12 @@ void writeText(uintptr_t n, int32_t x, int32_t y, const char *ch);
 void write(uintptr_t n, int32_t x, int32_t y, const char *ch);
 void flush(uintptr_t n);
 ]]
-local freen = ffi.load("G:\\Projekte\\Rust\\freen\\target\\i686-pc-windows-msvc\\debug\\freen.dll")
+local libDir = debug.getinfo(1).source:match("@?(.*\\)")
+local freen = ffi.load(libDir.."\\freen.dll")
 
-FONT_SIZE = 24
+FREEN = {
+	fontsize = 24
+}
 
 local SCREEN_CACHE = {}
 
@@ -36,7 +39,7 @@ function FINComputerGPU:setSize(w, h)
 	self.screen.width = w
 	self.screen.height = h
 	if (self.screen._handle == nil) then
-		self.screen._handle = freen.create(w, h, FONT_SIZE, eventHandler)
+		self.screen._handle = freen.create(w, h, FREEN.fontsize, eventHandler)
 	end
 end
 

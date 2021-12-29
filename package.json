@@ -17,6 +17,7 @@
 		"bundle": "bundle.lua",
 		"metadata": false,
 		"minify": false,
+		"watch": true,
 		"libs": [
 			"lua"
 		]
