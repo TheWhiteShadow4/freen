@@ -3,7 +3,7 @@ use wgpu_glyph::{ab_glyph, GlyphBrushBuilder, Section, Text, Layout, GlyphBrush}
 use wgpu::{Device, TextureFormat, CommandEncoder, TextureView};
 use futures::task::SpawnExt;
 
-use super::{Size, Buffer, ScreenSize};
+use super::{Buffer, ScreenSize};
 
 pub struct TextGrid
 {

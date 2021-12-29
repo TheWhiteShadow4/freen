@@ -14,7 +14,6 @@ pub struct Renderer
 	queue: wgpu::Queue,
 	surface: wgpu::Surface,
 	present_mode: wgpu::PresentMode,
-	size: ScreenSize,
 	grid: PixelGrid,
 	text: TextGrid,
 }
@@ -66,7 +65,6 @@ impl Renderer
 			queue,
 			surface,
 			present_mode,
-			size,
 			grid,
 			text
 		}

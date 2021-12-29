@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use wgpu::{Device, RenderPipeline, Extent3d};
 use wgpu::util::DeviceExt;
@@ -9,8 +9,7 @@ use super::{Buffer, ScreenSize};
 
 pub struct PixelGrid
 {
-	renderer: GridRenderer,
-	texture_format: wgpu::TextureFormat
+	renderer: GridRenderer
 }
 
 impl PixelGrid
@@ -19,11 +18,7 @@ impl PixelGrid
 	{
 		let renderer = GridRenderer::new(&device, texture_format, size);
 
-		Self
-		{
-			renderer,
-			texture_format
-		}
+		Self {renderer}
 	}
 
 	pub fn draw_queued(&self, device: &Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, buffer: &Buffer)
@@ -43,8 +38,6 @@ impl PixelGrid
 			height: size.grid_height,
 			depth_or_array_layers: 1,
 		};
-
-		//let buffer_size = (grid_size.width * grid_size.height * 4) as usize;
 
 		let texture = device.create_texture(&wgpu::TextureDescriptor {
 			label: Some("grid:source_texture"),
@@ -146,7 +139,7 @@ impl GridRenderer
 					ty: wgpu::BindingType::Buffer {
 						ty: wgpu::BufferBindingType::Uniform,
 						has_dynamic_offset: false,
-						min_binding_size: None,
+						min_binding_size: NonZeroU64::new(64),
 					},
 					count: None,
 				},
