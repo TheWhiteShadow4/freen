@@ -5,7 +5,6 @@ use crate::component::*;
 
 mod screens;
 use crate::screens::*;
-use screens::renderer::Renderer;
 use screens::screen::*;
 
 use core::time;
@@ -107,10 +106,10 @@ pub unsafe extern "C" fn newEventHandler() -> *const EventHandler
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn startListen(hptr: *mut EventHandler, sptr: *mut Screen)
+pub unsafe extern "C" fn startListen(hptr: *mut EventHandler, sptr: *mut ScreenComponent)
 {
 	let emitter = (*hptr).new_emitter((*sptr).uid());
-	(*sptr).set_emitter(Some(emitter));
+	(*sptr).listen(Some(emitter));
 }
 
 #[no_mangle]
@@ -142,9 +141,9 @@ pub unsafe extern "C" fn pull(ptr: *mut EventHandler, t: f32) -> ExtEvent
 }
 
 #[no_mangle]
-pub extern "C" fn create(width: u32, height: u32, fontsize: u32, handler: *mut EventHandler) -> *mut Screen
+pub extern "C" fn create(width: u32, height: u32, fontsize: u32, handler: *mut EventHandler) -> *mut ScreenComponent
 {
-	let screen = Screen::new(width, height, fontsize);
+	let screen = ScreenComponent::new(width, height, fontsize);
 	unsafe
 	{
 		if handler.is_null()
@@ -175,25 +174,25 @@ pub unsafe extern "C" fn open(sptr: *mut Screen, hptr: *mut EventHandler)
 }*/
 
 #[no_mangle]
-pub unsafe extern "C" fn destroy(ptr: *mut Screen)
+pub unsafe extern "C" fn destroy(ptr: *mut ScreenComponent)
 {
 	if !ptr.is_null() { Box::from_raw(ptr); }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn foreground(ptr: *mut Screen, r: f32, g: f32, b: f32, a: f32)
+pub unsafe extern "C" fn foreground(ptr: *mut ScreenComponent, r: f32, g: f32, b: f32, a: f32)
 {
 	(*ptr).fg = Color::new(r, g, b, a);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn background(ptr: *mut Screen, r: f32, g: f32, b: f32, a: f32)
+pub unsafe extern "C" fn background(ptr: *mut ScreenComponent, r: f32, g: f32, b: f32, a: f32)
 {
 	(*ptr).bg = Color::new(r, g, b, a);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn fill(ptr: *const Screen, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char)
+pub unsafe extern "C" fn fill(ptr: *const ScreenComponent, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char)
 {
 	let char = CStr2Char(cstr);
 	let handle = &*ptr;
@@ -204,7 +203,7 @@ pub unsafe extern "C" fn fill(ptr: *const Screen, x: i32, y: i32, w: i32, h: i32
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn writeText(ptr: *mut Screen, x: i32, y: i32, cstr: *const c_char)
+pub unsafe extern "C" fn writeText(ptr: *mut ScreenComponent, x: i32, y: i32, cstr: *const c_char)
 {
 	let text = CStr::from_ptr(cstr).to_str().expect("Ungültige Zeichen");
 	let handle = &*ptr;
@@ -214,7 +213,7 @@ pub unsafe extern "C" fn writeText(ptr: *mut Screen, x: i32, y: i32, cstr: *cons
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn write(ptr: *mut Screen, x: i32, y: i32, cstr: *const c_char)
+pub unsafe extern "C" fn write(ptr: *mut ScreenComponent, x: i32, y: i32, cstr: *const c_char)
 {
 	let char = CStr2Char(cstr);
 	let handle = &*ptr;
@@ -224,7 +223,7 @@ pub unsafe extern "C" fn write(ptr: *mut Screen, x: i32, y: i32, cstr: *const c_
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn setSize(ptr: *mut Screen, width: u32, height: u32)
+pub unsafe extern "C" fn setSize(ptr: *mut ScreenComponent, width: u32, height: u32)
 {
 	assert!(width > 0);
 	assert!(height > 0);
@@ -233,7 +232,7 @@ pub unsafe extern "C" fn setSize(ptr: *mut Screen, width: u32, height: u32)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn flush(ptr: *mut Screen)
+pub unsafe extern "C" fn flush(ptr: *mut ScreenComponent)
 {
 	(*ptr).flush();
 }

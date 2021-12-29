@@ -97,6 +97,45 @@ pub struct Size
 	pub height: u32,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct ScreenSize
+{
+	pub grid_width: u32,
+	pub grid_height: u32,
+	pub window_width: u32,
+	pub window_height: u32,
+	pub font_size: u32,
+}
+
+impl ScreenSize
+{
+	pub fn from_grid(width: u32, height: u32, font_size: u32) -> Self
+	{
+		Self
+		{
+			grid_width: width,
+			grid_height: height,
+			window_width: width * font_size / 2,
+			window_height: height * font_size,
+			font_size
+		}
+	}
+
+	#[inline]
+	pub fn cell_size(&self) -> Size
+	{
+		Size{width: self.font_size / 2, height: self.font_size}
+	}
+
+	pub fn resize_grid(&mut self, width: u32, height: u32)
+	{
+		self.grid_width = width;
+		self.grid_height = height;
+		self.window_width = width * self.font_size / 2;
+		self.window_height = height * self.font_size;
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct Buffer
 {

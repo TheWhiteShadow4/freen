@@ -4,48 +4,26 @@ use wgpu::{Device, RenderPipeline, Extent3d};
 use wgpu::util::DeviceExt;
 use ultraviolet::Mat4;
 
-use super::{Size, Buffer};
+use super::{Buffer, ScreenSize};
 
 
 pub struct PixelGrid
 {
-	grid_size: Size,
-	screen_size: Size,
 	renderer: GridRenderer,
 	texture_format: wgpu::TextureFormat
 }
 
 impl PixelGrid
 {
-	pub fn new(
-		device: &Device,
-		grid_size: Size,
-		screen_size: Size,
-		texture_format: wgpu::TextureFormat) -> Self
+	pub fn new(device: & Device, size: ScreenSize, texture_format: wgpu::TextureFormat) -> Self
 	{
-		let texture_extent = wgpu::Extent3d {
-			width: grid_size.width,
-			height: grid_size.height,
-			depth_or_array_layers: 1,
-		};
-
-		let texture = PixelGrid::create_texture(&device, grid_size);
-
-		let renderer = GridRenderer::new(&device, texture, texture_format, texture_extent, screen_size);
+		let renderer = GridRenderer::new(&device, texture_format, size);
 
 		Self
 		{
-			grid_size,
-			screen_size,
 			renderer,
 			texture_format
 		}
-	}
-
-	#[inline]
-	pub fn get_size(&self) -> Size
-	{
-		self.grid_size
 	}
 
 	pub fn draw_queued(&self, device: &Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, buffer: &Buffer)
@@ -53,23 +31,16 @@ impl PixelGrid
 		self.renderer.draw(device, queue, encoder, buffer, target);
 	}
 
-	pub fn resize_grid(&mut self, device: &Device, width: u32, height: u32)
+	pub fn resize(&mut self, device: &Device, size: ScreenSize, queue: &wgpu::Queue)
 	{
-		let texture = PixelGrid::create_texture(device, Size{width, height});
-		let texture_extent = wgpu::Extent3d {
-			width,
-			height,
-			depth_or_array_layers: 1,
-		};
-
-		self.renderer = GridRenderer::new(&device, texture, self.texture_format, texture_extent, self.screen_size);
+		self.renderer.resize(size, device, queue);
 	}
 
-	fn create_texture(device: &Device, grid_size: Size) -> wgpu::Texture
+	fn create_texture(device: &Device, size: &ScreenSize) -> (wgpu::Texture, wgpu::Extent3d)
 	{
-		let texture_extent = wgpu::Extent3d {
-			width: grid_size.width,
-			height: grid_size.height,
+		let extent = wgpu::Extent3d {
+			width: size.grid_width,
+			height: size.grid_height,
 			depth_or_array_layers: 1,
 		};
 
@@ -77,55 +48,53 @@ impl PixelGrid
 
 		let texture = device.create_texture(&wgpu::TextureDescriptor {
 			label: Some("grid:source_texture"),
-			size: texture_extent,
+			size: extent,
 			mip_level_count: 1,
 			sample_count: 1,
 			dimension: wgpu::TextureDimension::D2,
 			format: wgpu::TextureFormat::Rgba8UnormSrgb,
 			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 		});
-		texture
+		(texture, extent)
 	}
 }
 
 struct GridRenderer
 {
+	size: ScreenSize,
 	pipeline: RenderPipeline,
 	bind_group: wgpu::BindGroup,
 	vertex_buffer: wgpu::Buffer,
 	clip_rect: (u32, u32, u32, u32),
 	texture: wgpu::Texture,
 	texture_size: Extent3d,
+	uniform_buffer: wgpu::Buffer,
 }
 
 impl GridRenderer
 {
-	fn new(
-		device: &Device,
-		texture: wgpu::Texture,
-		texture_format: wgpu::TextureFormat,
-		texture_size: Extent3d,
-		screen_size: Size) -> GridRenderer
+	fn new(device: &Device, texture_format: wgpu::TextureFormat, size: ScreenSize) -> GridRenderer
 	{
 		let shader = device.create_shader_module(&wgpu::include_wgsl!("../shaders/shader.wgsl"));
-
+		let (texture, texture_size) = PixelGrid::create_texture(&device, &size);
+		
 		let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("grid:renderer_sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+			label: Some("grid:renderer_sampler"),
+			address_mode_u: wgpu::AddressMode::ClampToEdge,
+			address_mode_v: wgpu::AddressMode::ClampToEdge,
+			address_mode_w: wgpu::AddressMode::ClampToEdge,
+			mag_filter: wgpu::FilterMode::Nearest,
+			min_filter: wgpu::FilterMode::Nearest,
+			mipmap_filter: wgpu::FilterMode::Nearest,
 			lod_max_clamp: 1.0,
 			..Default::default()
-        });
+		});
 
 		let vertex_data: [[f32; 2]; 3] = [
-            [-1.0, -1.0],
-            [3.0, -1.0],
-            [-1.0, 3.0],
-        ];
+			[-1.0, -1.0],
+			[3.0, -1.0],
+			[-1.0, 3.0],
+		];
 		let vertex_data_slice: &[u8] = bytemuck::cast_slice(&vertex_data);
 		let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
 			label: Some("grid:renderer_vertex_buffer"),
@@ -134,21 +103,21 @@ impl GridRenderer
 		});
 
 		let vertex_buffer_layout = wgpu::VertexBufferLayout {
-            array_stride: (vertex_data_slice.len() / vertex_data.len()) as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x2],
-        };
+			array_stride: (vertex_data_slice.len() / vertex_data.len()) as wgpu::BufferAddress,
+			step_mode: wgpu::VertexStepMode::Vertex,
+			attributes: &wgpu::vertex_attr_array![0 => Float32x2],
+		};
 		
 		let matrix = ScalingMatrix::new(
-            (texture_size.width as f32, texture_size.height as f32),
-            (screen_size.width as f32, screen_size.height as f32),
-        );
+			(texture_size.width as f32, texture_size.height as f32),
+			(size.window_width as f32, size.window_height as f32),
+		);
 		let transform_bytes = matrix.as_bytes();
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("grid:renderer_matrix_uniform_buffer"),
-            contents: transform_bytes,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+		let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+			label: Some("grid:renderer_matrix_uniform_buffer"),
+			contents: transform_bytes,
+			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+		});
 
 		let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -237,7 +206,9 @@ impl GridRenderer
 
 		GridRenderer
 		{
+			size,
 			pipeline,
+			uniform_buffer,
 			bind_group,
 			vertex_buffer,
 			clip_rect,
@@ -295,6 +266,23 @@ impl GridRenderer
             self.clip_rect.3,
         );
         rpass.draw(0..3, 0..1);
+	}
+
+	pub fn resize(&mut self, size: ScreenSize, device: &wgpu::Device, queue: &wgpu::Queue)
+	{
+		self.size = size;
+		let (texture, extent) = PixelGrid::create_texture(device, &self.size);
+		self.texture = texture;
+		self.texture_size = extent;
+
+		let matrix = ScalingMatrix::new(
+			(self.size.grid_width as f32, self.size.grid_height as f32),
+			(self.size.window_width as f32, self.size.window_height as f32),
+		);
+		let transform_bytes = matrix.as_bytes();
+        queue.write_buffer(&self.uniform_buffer, 0, transform_bytes);
+
+		self.clip_rect = matrix.clip_rect();
 	}
 }
 

@@ -3,13 +3,12 @@ use wgpu_glyph::{ab_glyph, GlyphBrushBuilder, Section, Text, Layout, GlyphBrush}
 use wgpu::{Device, TextureFormat, CommandEncoder, TextureView};
 use futures::task::SpawnExt;
 
-use super::{Size, Buffer};
+use super::{Size, Buffer, ScreenSize};
 
 pub struct TextGrid
 {
 	glyph_brush: GlyphBrush<()>,
-	screen_size: Size,
-	font_size: u32,
+	size: ScreenSize,
 	staging_belt: wgpu::util::StagingBelt,
 	local_pool: futures::executor::LocalPool,
 	local_spawner: futures::executor::LocalSpawner
@@ -17,7 +16,7 @@ pub struct TextGrid
 
 impl TextGrid
 {
-	pub fn new(device: &Device, screen_size: Size, font_size: u32, texture_format: TextureFormat) -> Self
+	pub fn new(device: &Device, size: ScreenSize, texture_format: TextureFormat) -> Self
 	{
 		let font = ab_glyph::FontArc::try_from_slice(include_bytes!("fira-mono.regular.ttf")).unwrap();
 		let glyph_brush = GlyphBrushBuilder::using_font(font).build(&device, texture_format);
@@ -29,8 +28,7 @@ impl TextGrid
 		Self
 		{
 			glyph_brush,
-			screen_size,
-			font_size,
+			size,
 			staging_belt,
 			local_pool,
 			local_spawner,
@@ -39,8 +37,8 @@ impl TextGrid
 
 	pub fn draw(&mut self, device: &Device, encoder: &mut CommandEncoder, view: &TextureView, buffer: &Buffer)
 	{
-		let bounds = (self.screen_size.width as f32, self.screen_size.height as f32);
-		let cell_size = Size{width: self.font_size / 2, height: self.font_size};
+		let bounds = (self.size.window_width as f32, self.size.window_height as f32);
+		let cell_size = self.size.cell_size();
 
 		for i in 0..buffer.chars.len()
 		{
@@ -50,12 +48,10 @@ impl TextGrid
 			self.glyph_brush.queue(Section {
 				screen_position: (x, y),
 				bounds: bounds,
-				text: vec![Text::new(&buffer.chars[i].to_string()).with_color(buffer.foreground[i]).with_scale(self.font_size as f32)],
+				text: vec![Text::new(&buffer.chars[i].to_string()).with_color(buffer.foreground[i]).with_scale(self.size.font_size as f32)],
 				layout: Layout::default()
 			});
 		}
-
-
 
 		self.glyph_brush
 		.draw_queued(
@@ -63,8 +59,8 @@ impl TextGrid
 			&mut self.staging_belt,
 			encoder,
 			view,
-			self.screen_size.width,
-			self.screen_size.height,
+			self.size.window_width,
+			self.size.window_height,
 		)
 		.expect("Draw queued");
 		self.staging_belt.finish();
@@ -74,5 +70,10 @@ impl TextGrid
 	{
 		self.local_spawner.spawn(self.staging_belt.recall()).expect("Recall staging belt");
 		self.local_pool.run_until_stalled();
+	}
+
+	pub fn resize(&mut self, _device: &Device, size: ScreenSize)
+	{
+		self.size = size;
 	}
 }

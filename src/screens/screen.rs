@@ -1,9 +1,9 @@
 
 use crate::{EventEmitter, component::{UID, Component, generateUID}, Event};
-use super::{Buffer, Color, Size};
+use super::{Buffer, Color, Size, ScreenSize};
 use super::renderer::Renderer;
 
-use std::{sync::{Arc, Mutex}, thread};
+use std::{sync::{Arc, Mutex}, thread, fmt::Debug};
 use winit::platform::windows::EventLoopExtWindows;
 use winit::window::Icon;
 use winit::{
@@ -18,179 +18,187 @@ const EVENT_MOUSE_DOWN: &str = "OnMouseDown\0";
 const EVENT_MOUSE_UP: &str = "OnMouseUp\0";
 const EVENT_MOUSE_MOVE: &str = "OnMouseMove\0";
 
-#[derive(Debug)]
-pub struct ScreenShare
-{
-	window: Option<Window>,
-	buffer: Buffer,
-	width: u32,
-	height: u32,
-	fontsize: u32,
-	emitter: Option<EventEmitter>
-}
-
-impl ScreenShare
-{
-	pub fn new(width: u32, height: u32, fontsize: u32) -> ScreenShare
-	{
-		ScreenShare{
-			window: None,
-			buffer: Buffer::new(width, height),
-			width,
-			height,
-			fontsize,
-			emitter: None
-		}
-	}
-
-	pub fn window(&self) -> Option<&Window>
-	{
-		self.window.as_ref()
-	}
-
-	fn setEmitter(&mut self, emitter: Option<EventEmitter>)
-	{
-		self.emitter = emitter;
-	}
-}
 
 #[derive(Debug)]
 pub struct ScreenComponent
 {
-
+	id: UID,
+	pub fg: Color,
+	pub bg: Color,
+	font_size: u32,
+	buffer: Arc<Mutex<Buffer>>,
+	window: Arc<Mutex<Option<Window>>>,
 }
 
 impl ScreenComponent
 {
-
-}
-
-#[derive(Debug)]
-pub struct Screen
-{
-	id: UID,
-	pub share: Arc<Mutex<ScreenShare>>,
-	pub fg: Color,
-	pub bg: Color
-}
-
-impl Screen
-{
-	pub fn new(width: u32, height: u32, fontsize: u32) -> Screen
+	pub fn new(width: u32, height: u32, font_size: u32) -> Self
 	{
 		assert!(width > 0);
 		assert!(height > 0);
 		env_logger::init();
-		Screen
+		Self
 		{
 			id: generateUID(),
-			share: Arc::new( Mutex::new(ScreenShare::new(width, height, fontsize))),
 			fg: Color::WHITE,
-			bg: Color::BLACK
+			bg: Color::BLACK,
+			font_size,
+			buffer: Arc::new( Mutex::new(Buffer::new(width, height))),
+			window: Arc::new( Mutex::new(None))
 		}
 	}
 
 	pub fn open(&self, emitter: Option<EventEmitter>)
 	{
-		let share = self.share.clone();
-		thread::spawn(|| {
-			openWindow(share, emitter);
+		let buf = self.buffer.lock().unwrap();
+		let width = buf.width;
+		let height = buf.height;
+		let font_size = self.font_size;
+		let buffer = self.buffer.clone();
+		let window_arc = self.window.clone();
+		thread::spawn(move || {
+			let (mut screen, event_loop) = Screen::new(width, height, font_size, emitter, buffer, window_arc);
+			screen.run_event_loop(event_loop);
 		});
 	}
 
 	pub fn flush(&self)
 	{
-		let screenShare = self.share.lock().unwrap();
-		match screenShare.window()
+		let window = self.window.lock().unwrap();
+		if window.is_some()
 		{
-			Some(w) => w.request_redraw(),
-			None => ()
+			window.as_ref().unwrap().request_redraw();
 		}
 	}
 
 	pub fn withBuffer<F>(&self, mut func: F) where F: FnMut(&mut Buffer)
 	{
-		let buffer = &mut self.share.lock().unwrap().buffer;
-		func(buffer);
+		func(&mut self.buffer.lock().unwrap());
 	}
 
 	pub fn isOpen(&self) -> bool
 	{
-		self.share.lock().unwrap().window().is_some()
+		self.window.lock().unwrap().is_some()
 	}
 
-	pub fn set_emitter(&mut self, emitter: Option<EventEmitter>)
+	/*pub fn set_emitter(&mut self, emitter: Option<EventEmitter>)
 	{
 		self.share.lock().unwrap().setEmitter(emitter);
-	}
+	}*/
 
 	pub fn resize_screen(&mut self, width: u32, height: u32)
 	{
-		let share = &mut self.share.lock().unwrap();
-		share.buffer.resize(width, height);
+		self.buffer.lock().unwrap().resize(width, height);
 	}
 }
 
-impl Component for Screen
+struct Screen
 {
-	fn uid(&self) -> UID { self.id }
+	size: ScreenSize,
+	input: InputHelper,
+	buffer: Arc<Mutex<Buffer>>,
+	window: Arc<Mutex<Option<Window>>>,
+	renderer: Renderer
 }
 
-fn openWindow(share: Arc<Mutex<ScreenShare>>, emitter: Option<EventEmitter>)
+impl Debug for Screen
 {
-	let mut cnf = share.lock().unwrap();
-	let font_size = cnf.fontsize;
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+	{
+        f.debug_struct("Screen").field("size", &self.size)
+		.field("buffer", &self.buffer)
+		.field("window", &self.window).finish()
+    }
+}
 
-	let grid_size = Size{width: cnf.width, height: cnf.height};
-	let screen_size = Size{width: (cnf.width * font_size)/2, height: cnf.height * font_size};
+impl Screen
+{
+	fn new(width: u32, height: u32, font_size: u32, emitter: Option<EventEmitter>, buffer: Arc<Mutex<Buffer>>, window_arc: Arc<Mutex<Option<Window>>>) -> (Self, EventLoop<()>)
+	{
+		let input = InputHelper::new(emitter, width, height);
 
-	let mut inputHelper = InputHelper::new(emitter, grid_size.width, grid_size.height);
-	
-	let iconData = include_bytes!("icon.rgba");
-	let icon = Icon::from_rgba(iconData.to_vec(), 32, 32).ok();
+		let size = ScreenSize::from_grid(width, height, font_size);
 
-	let mut event_loop: EventLoop<()>  = EventLoop::new_any_thread();
-	let window = WindowBuilder::new()
-	.with_title("Screen")
-	.with_inner_size(PhysicalSize{width: screen_size.width as f32, height: screen_size.height as f32})
-	.with_maximized(false)
-	.with_resizable(false)
-	.with_window_icon(icon)
-	.build(&event_loop)
-	.unwrap();
+		let iconData = include_bytes!("icon.rgba");
+		let icon = Icon::from_rgba(iconData.to_vec(), 32, 32).ok();
 
-	let mut renderer = Renderer::new( &window, grid_size, font_size, wgpu::PresentMode::Mailbox);
-	cnf.window = Some(window);
-	drop(cnf);
+		let event_loop: EventLoop<()>  = EventLoop::new_any_thread();
 
-	//let mut fps_counter = FPSCounter::new();
+		let window = WindowBuilder::new()
+		.with_title("Screen")
+		.with_inner_size(PhysicalSize{width: size.window_width as f32, height: size.window_height as f32})
+		.with_maximized(false)
+		.with_resizable(false)
+		.with_window_icon(icon)
+		.build(&event_loop)
+		.unwrap();
 
-	event_loop.run_return(|event, _, control_flow| {
+		let renderer = Renderer::new( &window, size, wgpu::PresentMode::Mailbox);
+		window_arc.lock().unwrap().replace(window);
 
-		//share.lock().unwrap().update(&mut renderer);
-
-		if let event::Event::RedrawRequested(_) = event
+		(Self
 		{
-			if renderer.render(&mut share.lock().unwrap().buffer)
+			size,
+			input,
+			buffer,
+			window: window_arc,
+			renderer
+		}, event_loop)
+	}
+
+	fn run_event_loop(&mut self, mut event_loop: EventLoop<()>)
+	{
+		//let buffer = self.buffer;
+
+		event_loop.run_return(|event, _, control_flow| {
+
+			//share.lock().unwrap().update(&mut renderer);
+	
+			if let event::Event::RedrawRequested(_) = event
+			{
+				self.perfom_resizeing();
+				if self.renderer.render(&self.buffer.lock().unwrap())
+				{
+					*control_flow = ControlFlow::Exit;
+					//title = "Screen ".to_string() + &fps_counter.tick().to_string();
+					//share.
+					//window.set_inner_size(PhysicalSize{width: 500.0, height: 400.0});
+					//window.set_title(&title);
+					return;
+				}
+				//println!("FPS: {}", fps_counter.tick());
+			}
+	
+			self.input.update(&event);
+			if self.input.closeRequested()
 			{
 				*control_flow = ControlFlow::Exit;
-				//title = "Screen ".to_string() + &fps_counter.tick().to_string();
-				//share.
-				//window.set_inner_size(PhysicalSize{width: 500.0, height: 400.0});
-				//window.set_title(&title);
 				return;
 			}
-			//println!("FPS: {}", fps_counter.tick());
-		}
+		});
+		self.window.lock().unwrap().take();
+	}
 
-		inputHelper.update(&event);
-
-		if inputHelper.closeRequested()
+	fn perfom_resizeing(&mut self)
+	{
+		let buffer = self.buffer.lock().unwrap();
+		if buffer.width != self.size.grid_width || buffer.height != self.size.grid_height
 		{
-			*control_flow = ControlFlow::Exit;
-			return;
+			self.size.resize_grid(buffer.width, buffer.height);
+			self.window.lock().unwrap().as_ref().unwrap().set_inner_size(PhysicalSize{width: self.size.window_width as f32, height: self.size.window_height as f32});
+			self.renderer.resize(self.size);
 		}
-	});
+	}
+}
+
+impl Component for ScreenComponent
+{
+	fn uid(&self) -> UID { self.id }
+
+	fn listen(&mut self, _emitter: Option<EventEmitter>)
+	{
+		todo!()
+    }
 }
 
 struct InputHelper

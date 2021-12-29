@@ -3,7 +3,8 @@
 
 use winit::window::Window;
 
-use super::{grid::PixelGrid, Size, Buffer};
+use super::ScreenSize;
+use super::{grid::PixelGrid, Buffer};
 
 use super::text::TextGrid;
 
@@ -13,13 +14,14 @@ pub struct Renderer
 	queue: wgpu::Queue,
 	surface: wgpu::Surface,
 	present_mode: wgpu::PresentMode,
+	size: ScreenSize,
 	grid: PixelGrid,
-	text: TextGrid
+	text: TextGrid,
 }
 
 impl Renderer
 {
-	pub fn new(window: &Window, grid_size: Size, font_size: u32, present_mode: wgpu::PresentMode) -> Self
+	pub fn new(window: &Window, size: ScreenSize, present_mode: wgpu::PresentMode) -> Self
 	{
 		let instance = wgpu::Instance::new(wgpu::Backends::all());
 		let surface = unsafe { instance.create_surface(&window) };
@@ -40,13 +42,10 @@ impl Renderer
 				.await
 				.expect("Request device")
 		});
-		let inner_size = window.inner_size();
-		let screen_size = Size{width: inner_size.width, height: inner_size.height};
 
 		let texture_format = wgpu::TextureFormat::Bgra8UnormSrgb;
 		let grid = PixelGrid::new(&device,
-			grid_size, 
-			screen_size, 
+			size,
 			texture_format);
 
 		surface.configure(
@@ -54,50 +53,44 @@ impl Renderer
 			&wgpu::SurfaceConfiguration {
 				usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 				format: texture_format,
-				width: screen_size.width,
-				height: screen_size.height,
+				width: size.window_width,
+				height: size.window_height,
 				present_mode,
 			},
 		);
 
-		let text = TextGrid::new(&device, screen_size, font_size, texture_format);
+		let text = TextGrid::new(&device, size, texture_format);
 
 		Self{
 			device,
 			queue,
 			surface,
 			present_mode,
+			size,
 			grid,
 			text
 		}
 	}
 
-	pub fn resize_grid(&mut self, width: u32, height: u32)
-	{
-		self.grid.resize_grid(&self.device, width, height);
-	}
-
-	pub fn resize_surface(&mut self, width: u32, height: u32)
+	pub fn resize(&mut self, size: ScreenSize)
 	{
 		self.surface.configure(
 			&self.device,
 			&wgpu::SurfaceConfiguration {
 				usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 				format: wgpu::TextureFormat::Bgra8UnormSrgb,
-				width,
-				height,
+				width: size.window_width,
+				height: size.window_height,
 				present_mode: self.present_mode,
 			},
 		);
+
+		self.grid.resize(&self.device, size, &self.queue);
+		self.text.resize(&self.device, size);
 	}
 
 	pub fn render(&mut self, buffer: &Buffer) -> bool
 	{
-		if buffer.width != self.grid.get_size().width || buffer.height != self.grid.get_size().height
-		{
-			self.resize_grid(buffer.width, buffer.height);
-		}
-
 		let mut encoder = self.device.create_command_encoder(
 			&wgpu::CommandEncoderDescriptor {
 				label: Some("Redraw"),
