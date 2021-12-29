@@ -100,6 +100,8 @@ impl ExtEvent
 #[no_mangle]
 pub unsafe extern "C" fn newEventHandler() -> *const EventHandler
 {
+	env_logger::init();
+	
 	let handler = EventHandler::new(32);
 	let boxed = Box::new(handler);
     Box::into_raw(boxed)

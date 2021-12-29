@@ -1,5 +1,8 @@
 --- Freen Matrix Simulation
 
+-- For running in IDE from project root. set LUA_PATH should solve it too.
+package.path = package.path..';example/?.lua' --$DEV-ONLY$
+
 require 'ficsit-api' --$DEV-ONLY$
 require 'freen' --$DEV-ONLY$
 require 'matrix'

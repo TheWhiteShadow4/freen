@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(unused_parens)]
 
+use wgpu::{SurfaceError, CommandEncoder};
 use winit::window::Window;
 
 use super::ScreenSize;
@@ -89,17 +90,17 @@ impl Renderer
 
 	pub fn render(&mut self, buffer: &Buffer) -> bool
 	{
-		let mut encoder = self.device.create_command_encoder(
-			&wgpu::CommandEncoderDescriptor {
-				label: Some("Redraw"),
-			},
-		);
+		
+		let result = self.render_frame(buffer);
+		return result.ok().unwrap_or(false);
+	}
 
+	fn render_frame(&mut self, buffer: &Buffer) -> Result<bool, SurfaceError>
+	{
+		let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {label: Some("Redraw")});
 		// Get the next frame
-		let frame = self.surface.get_current_texture().expect("Get next frame");
-		let view = &frame
-			.texture
-			.create_view(&wgpu::TextureViewDescriptor::default());
+		let frame = self.surface.get_current_texture()?;
+		let view = &frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
 		// Clear frame
 		encoder.begin_render_pass(
@@ -110,14 +111,7 @@ impl Renderer
 						view,
 						resolve_target: None,
 						ops: wgpu::Operations {
-							load: wgpu::LoadOp::Clear(
-								wgpu::Color {
-									r: 0.5,
-									g: 0.4,
-									b: 0.0,
-									a: 1.0,
-								},
-							),
+							load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
 							store: true,
 						},
 					},
@@ -136,6 +130,6 @@ impl Renderer
 		
 		self.text.clean_frame();
 
-		false
+		Ok(false)
 	}
 }

@@ -36,12 +36,42 @@ function defineClass(c, cls)
 	return c
 end
 
+
+
+table.keys = function(t)
+	local keys={}
+	local n=0
+	for k,_ in pairs(t) do
+		n=n+1
+		keys[n]=k
+	end
+	return keys
+end
+
+
+function lazyArray(func, ...)
+	a = {}
+	args = {...}
+	setmetatable(a, {
+		__index = function(a, i)
+			if i > 0 then
+				local obj = func(table.unpack(args))
+				a[i] = obj
+				return obj
+			else
+				return nil
+			end
+		end
+	})
+	return a
+end
+
 function findClass(str)
 	return classes[str]
 end
 
 Network = Network or {}
-NickTable = {}
+ALIASES = {}
 
 local Component = {
 	__tostring = function(o) return o.id end
@@ -68,7 +98,10 @@ function createComponentIds(query, nick)
 	comp.nick = nick
 	
 	Network[id] = comp
-	if nick ~= nil then NickTable[nick] = comp end
+	if nick ~= nil then
+		if ALIASES[nick] == nil then ALIASES[nick] = {} end
+		table.insert(ALIASES[nick], comp)
+	end
 	return {id}
 end
 
@@ -87,7 +120,7 @@ computer = {
 		if type == nil then return {} end
 		cls = classes[type.name] 
 		if cls == nil then return {} end
-		return {cls:instantiate()}
+		return lazyArray(cls.instantiate)
 	end
 }
 
@@ -109,10 +142,16 @@ component = {
 		
 		if Network[query] ~= nil then
 			return Network[query].id
-		elseif NickTable[query] ~= nil then
-			return NickTable[query].id
+		elseif ALIASES[query] ~= nil then
+			ids = {}
+			for k,v in pairs(ALIASES[query]) do
+				table.insert(ids, v.id)
+			end
+			return ids
+		elseif query == "" then
+			table.keys(Network)
 		else
-			return createComponentIds(query, "virtual")
+			return lazyArray(createComponentIds, query, nil)
 		end
 	end
 }

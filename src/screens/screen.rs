@@ -36,7 +36,6 @@ impl ScreenComponent
 	{
 		assert!(width > 0);
 		assert!(height > 0);
-		env_logger::init();
 		Self
 		{
 			id: generateUID(),
