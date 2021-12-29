@@ -9,9 +9,10 @@ use super::{Size, Buffer};
 
 pub struct PixelGrid
 {
+	grid_size: Size,
+	screen_size: Size,
 	renderer: GridRenderer,
-	texture_format: wgpu::TextureFormat,
-	screen_size: Size
+	texture_format: wgpu::TextureFormat
 }
 
 impl PixelGrid
@@ -32,28 +33,19 @@ impl PixelGrid
 
 		let renderer = GridRenderer::new(&device, texture, texture_format, texture_extent, screen_size);
 
-		/*buffer[0] = 0xff;
-		buffer[1] = 0xff;
-		buffer[2] = 0xff;
-		buffer[3] = 0xff;
-		buffer[5] = 0xff;
-		buffer[7] = 0xff;
-
-		buffer[26] = 0xff;
-		buffer[27] = 0xff;
-
-		buffer[54] = 0xff;
-		buffer[55] = 0xff;
-
-		buffer[130] = 0xff;
-		buffer[131] = 0xff;*/
-
 		Self
 		{
+			grid_size,
+			screen_size,
 			renderer,
-			texture_format,
-			screen_size
+			texture_format
 		}
+	}
+
+	#[inline]
+	pub fn get_size(&self) -> Size
+	{
+		self.grid_size
 	}
 
 	pub fn draw_queued(&self, device: &Device, queue: &wgpu::Queue, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, buffer: &Buffer)

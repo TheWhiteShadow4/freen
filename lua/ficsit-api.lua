@@ -40,7 +40,7 @@ function findClass(str)
 	return classes[str]
 end
 
-Network = {}
+Network = Network or {}
 NickTable = {}
 
 local Component = {
@@ -150,6 +150,11 @@ Actor = {
 	location = {0, 0, 0},
 	scale = {1, 1, 1},
 	rotation = {0, 0, 0},
+	powerConnectors = {},
+	factoryConnectors = {},
+	pipeConnectors = {},
+	inventories = {},
+	networkConnectors = {},
 }
 
 function Actor:getPowerConnectors()
@@ -277,4 +282,3 @@ end
 function PowerConnection:getPower()
 	return nil
 end
-

@@ -2,7 +2,7 @@ ffi = require("ffi")
 
 ffi.cdef[[
 typedef struct { uint8_t red, green, blue, alpha; } rgb_color;
-typedef struct { const char *e; uint32_t c; int32_t a1; int32_t a2; int32_t a3; } event;
+typedef struct { const char *e; uint64_t c; int32_t a1; int32_t a2; int32_t a3; } event;
 int newEventHandler();
 event pull(uintptr_t n, float t);
 int create(uintptr_t w, uint32_t h, uint32_t f, uintptr_t h);
@@ -15,8 +15,9 @@ void writeText(uintptr_t n, int32_t x, int32_t y, const char *ch);
 void write(uintptr_t n, int32_t x, int32_t y, const char *ch);
 void flush(uintptr_t n);
 ]]
-local libDir = debug.getinfo(1).source:match("@?(.*\\)")
-local freen = ffi.load(libDir.."\\freen.dll")
+--local libDir = debug.getinfo(1).source:match("@?(.*/)")
+--print(libDir)
+local freen = ffi.load("G:\\Projekte\\Satisfactory\\Freen\\target\\i686-pc-windows-msvc\\debug\\freen.dll")
 
 FREEN = {
 	fontsize = 24
@@ -40,6 +41,8 @@ function FINComputerGPU:setSize(w, h)
 	self.screen.height = h
 	if (self.screen._handle == nil) then
 		self.screen._handle = freen.create(w, h, FREEN.fontsize, eventHandler)
+	else
+		freen.setSize(self.screen._handle, w, h)
 	end
 end
 
@@ -101,6 +104,10 @@ function Freen:close()
 			end
 		end
 	end
+end
+
+function convertUid(uid)
+	return uid[1]
 end
 
 defineClass(Freen, {

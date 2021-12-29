@@ -1,9 +1,8 @@
 use rand::Rng;
 
+pub type UID = u64;
 
-pub type UID = [u32; 4];
-
-pub static EMPTY_UID: UID = [0, 0, 0, 0];
+pub static EMPTY_UID: UID = 0;
 
 pub trait Component
 {
@@ -23,8 +22,17 @@ impl Component for GenericComponent
     }
 }
 
-pub fn generateUUID() -> UID
+pub fn generateUID() -> UID
 {
 	let mut rng = rand::thread_rng();
-	[rng.gen(), rng.gen(), rng.gen(), rng.gen()]
+	//let n = rng.gen::<u64>();
+	//let ptr: usize = unsafe { std::mem::transmute(n) };
+	//CStr::from_ptr(ptr);
+
+	
+	//println!("Magic {}", ptr);
+
+	//std::mem::forget(*n);
+	//let ptr = *n;  //[rng.gen(), rng.gen(), rng.gen(), rng.gen()]
+	rng.gen::<u64>()
 }

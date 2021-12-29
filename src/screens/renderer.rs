@@ -93,6 +93,11 @@ impl Renderer
 
 	pub fn render(&mut self, buffer: &Buffer) -> bool
 	{
+		if buffer.width != self.grid.get_size().width || buffer.height != self.grid.get_size().height
+		{
+			self.resize_grid(buffer.width, buffer.height);
+		}
+
 		let mut encoder = self.device.create_command_encoder(
 			&wgpu::CommandEncoderDescriptor {
 				label: Some("Redraw"),
