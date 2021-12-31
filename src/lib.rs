@@ -118,8 +118,15 @@ impl ExtEvent
 	}
 }
 
+#[inline]
+unsafe fn handle<T>(h: *mut T) -> &'static mut T
+{
+	assert!(!h.is_null(), "handle is null");
+	&mut *h
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn newEventHandler() -> *const EventHandler
+pub unsafe extern "C" fn new_event_handler() -> *const EventHandler
 {
 	env_logger::init();
 	
@@ -129,10 +136,11 @@ pub unsafe extern "C" fn newEventHandler() -> *const EventHandler
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn startListen(hptr: *mut EventHandler, sptr: *mut ScreenComponent)
+pub unsafe extern "C" fn start_listen(hptr: *mut EventHandler, sptr: *mut ScreenComponent)
 {
-	let emitter = (*hptr).new_emitter((*sptr).uid());
-	(*sptr).listen(Some(emitter));
+	let screen = handle(sptr);
+	let emitter = handle(hptr).new_emitter(screen.uid());
+	screen.listen(Some(emitter));
 }
 
 #[no_mangle]
@@ -140,7 +148,7 @@ pub unsafe extern "C" fn pull(ptr: *mut EventHandler, t: f32) -> ExtEvent
 {
 	let timeout = if t > 0.0 { Some(time::Duration::from_millis((t * 1000.0) as u64))} else {None};
 	
-	match (*ptr).poll(timeout)
+	match handle(ptr).poll(timeout)
 	{
 		Ok(evt) => {
 			return ExtEvent{
@@ -178,17 +186,24 @@ pub extern "C" fn create(width: u32, height: u32, fontsize: u32, handler: *mut E
 }
 
 #[no_mangle]
-pub extern "C" fn graphicHandle(width: u32, height: u32) -> *mut GraphicHandle
+pub extern "C" fn graphic_handle(width: u32, height: u32) -> *mut GraphicHandle
 {
-	let handle = GraphicHandle::new(width, height);
-	Box::into_raw(Box::new(handle))
+	let gpu = GraphicHandle::new(width, height);
+	Box::into_raw(Box::new(gpu))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn bindScreen(gPtr: *mut GraphicHandle, sPtr: *mut ScreenComponent)
+pub unsafe extern "C" fn bind_screen(gPtr: *mut GraphicHandle, sPtr: *mut ScreenComponent)
 {
-	let screen = *Box::from_raw(sPtr);
-	(*gPtr).unsafe_bind_screen(screen);
+	if sPtr.is_null()
+	{
+		handle(gPtr).bind_screen(None);
+	}
+	else
+	{
+		let screen = *Box::from_raw(sPtr);
+		handle(gPtr).bind_screen(Some(screen));
+	}
 }
 
 #[no_mangle]
@@ -200,20 +215,20 @@ pub unsafe extern "C" fn destroy(ptr: *mut ScreenComponent)
 #[no_mangle]
 pub unsafe extern "C" fn foreground(ptr: *mut GraphicHandle, r: f32, g: f32, b: f32, a: f32)
 {
-	(*ptr).fg = Color::new(r, g, b, a);
+	handle(ptr).fg = Color::new(r, g, b, a);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn background(ptr: *mut GraphicHandle, r: f32, g: f32, b: f32, a: f32)
 {
-	(*ptr).bg = Color::new(r, g, b, a);
+	handle(ptr).bg = Color::new(r, g, b, a);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn fill(ptr: *const GraphicHandle, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char)
+pub unsafe extern "C" fn fill(ptr: *mut GraphicHandle, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char)
 {
 	let char = CStr2Char(cstr);
-	let handle = &*ptr;
+	let handle = handle(ptr);
 
 	handle.exec(|buffer| {
 		buffer.fill(x, y, w, h, char, handle.fg, handle.bg);
@@ -221,10 +236,10 @@ pub unsafe extern "C" fn fill(ptr: *const GraphicHandle, x: i32, y: i32, w: i32,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn writeText(ptr: *mut GraphicHandle, x: i32, y: i32, cstr: *const c_char)
+pub unsafe extern "C" fn write_text(ptr: *mut GraphicHandle, x: i32, y: i32, cstr: *const c_char)
 {
 	let text = CStr::from_ptr(cstr).to_str().expect("Ungültige Zeichen");
-	let handle = &*ptr;
+	let handle = handle(ptr);
 	handle.exec(|buffer| {
 		buffer.writeText(x, y, &text, handle.fg, handle.bg);
 	});
@@ -234,54 +249,98 @@ pub unsafe extern "C" fn writeText(ptr: *mut GraphicHandle, x: i32, y: i32, cstr
 pub unsafe extern "C" fn write(ptr: *mut GraphicHandle, x: i32, y: i32, cstr: *const c_char)
 {
 	let char = CStr2Char(cstr);
-	let handle = &*ptr;
+	let handle = handle(ptr);
 	handle.exec(|buffer| {
 		buffer.write(x, y, char, handle.fg, handle.bg);
 	});
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn getBuffer(ptr: *mut GraphicHandle) -> *mut Buffer
+pub unsafe extern "C" fn set_location(ptr: *mut ScreenComponent, x: i32, y: i32)
 {
-	println!("getBuffer");
-
-	assert!(!ptr.is_null(), "freen is null");
-	let buffer = (*ptr).get_buffer();
-	Box::into_raw(Box::new(buffer))
+	handle(ptr).screen_location(x, y);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn setBuffer(ptr: *mut GraphicHandle, buf: *const Buffer)
+pub unsafe extern "C" fn set_size(ptr: *mut GraphicHandle, width: u32, height: u32)
 {
-	println!("setBuffer");
-
-	assert!(!ptr.is_null(), "freen is null");
-	assert!(!buf.is_null(), "buffer is null");
-	(*ptr).set_buffer(&*buf);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn setLocation(ptr: *mut ScreenComponent, x: i32, y: i32)
-{
-	assert!(!ptr.is_null(), "freen is null");
-	(*ptr).screen_location(x, y);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn setSize(ptr: *mut GraphicHandle, width: u32, height: u32)
-{
-	assert!(!ptr.is_null(), "freen is null");
 	assert!(width > 0);
 	assert!(height > 0);
 
-	(*ptr).resize_screen(width, height);
+	handle(ptr).resize_screen(width, height);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn flush(ptr: *mut GraphicHandle)
 {
-	assert!(!ptr.is_null(), "freen is null");
-	(*ptr).flush();
+	handle(ptr).flush();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn get_buffer(ptr: *mut GraphicHandle) -> *mut Buffer
+{
+	let buffer = handle(ptr).get_buffer();
+	Box::into_raw(Box::new(buffer))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn set_buffer(ptr: *mut GraphicHandle, buf: *mut Buffer)
+{
+	handle(ptr).set_buffer(handle(buf));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_size(ptr: *mut Buffer) -> Size
+{
+	let buffer = handle(ptr);
+	Size{width: buffer.width, height: buffer.height}
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_resize(ptr: *mut Buffer, width: u32, height: u32)
+{
+	handle(ptr).resize(width, height);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_copy(ptr: *mut Buffer, x: i32, y: i32, other: *mut Buffer)
+{
+	handle(ptr).copy(x, y, handle(other));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_clone(ptr: *mut Buffer) -> *mut Buffer
+{
+	Box::into_raw(Box::new(handle(ptr).clone()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_fill(ptr: *mut Buffer, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char, fg: Color, bg: Color)
+{
+	let char = CStr2Char(cstr);
+	handle(ptr).fill(x, y, w, h, char, fg, bg);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_write(ptr: *mut Buffer, x: i32, y: i32, cstr: *const c_char, fg: Color, bg: Color)
+{
+	let text = CStr::from_ptr(cstr).to_str().expect("Ungültige Zeichen");
+	handle(ptr).writeText(x, y, text, fg, bg);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_get(ptr: *mut Buffer, x: u32, y: u32) -> BufferCell
+{
+	let buffer = handle(ptr);
+	let idx = x as usize + y as usize * buffer.width as usize;
+	let char_ptr = Box::into_raw(Box::new(buffer.chars[idx].to_string()));
+	//let char_ptr = buffer.chars[idx].to_string().as_ptr();
+
+	BufferCell{
+		char: char_ptr,
+		fg: buffer.foreground[idx].clone(),
+		bg: buffer.background[idx].clone(),
+	}
 }
 
 unsafe fn CStr2Char(cstr: *const c_char) -> char

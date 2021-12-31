@@ -94,6 +94,7 @@ impl Into<[f32; 4]> for Color
     }
 }
 
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Size
 {
@@ -144,7 +145,6 @@ impl ScreenSize
 pub struct GraphicHandle
 {
 	pub buffer: Arc<Mutex<Buffer>>,
-	//pub screen: Option<&'a ScreenComponent>,
 	pub screen: Option<ScreenComponent>,
 	pub fg: Color,
 	pub bg: Color
@@ -163,12 +163,13 @@ impl GraphicHandle
 		}
 	}
 
-	pub fn unsafe_bind_screen(&mut self, screen: ScreenComponent)
+	pub fn bind_screen(&mut self, screen: Option<ScreenComponent>)
 	{
-		let mut s = screen;
-		s.open(self.buffer.clone());
-		//self.screen = Some(Box::leak(Box::new(s)));
-		self.screen = Some(s);
+		self.screen = screen;
+		if self.screen.is_some()
+		{
+			self.screen.as_mut().unwrap().open(self.buffer.clone());
+		}
 	}
 
 	pub fn resize_screen(&mut self, width: u32, height: u32)
@@ -178,7 +179,14 @@ impl GraphicHandle
 
 	pub fn get_buffer(&self) -> Buffer
 	{
-		self.buffer.lock().unwrap().clone()
+		let buffer;
+		{
+			let b = self.buffer.lock().unwrap();
+			//self.buffer.lock().unwrap().clone(
+			buffer = b.clone();
+		}
+		let _ = self.buffer.lock().unwrap();
+		buffer
 	}
 
 	pub fn set_buffer(&self, other: &Buffer)
@@ -200,7 +208,6 @@ impl GraphicHandle
 	}
 }
 
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Buffer
 {
@@ -247,7 +254,7 @@ impl Buffer
 		self.background.resize(size, Color::BLACK);
 	}
 
-	pub fn copy(&mut self, _x: i32, _y: i32, _other: Buffer)
+	pub fn copy(&mut self, _x: i32, _y: i32, _other: &Buffer)
 	{
 		/*let x1 = x.max(0) as usize;
 		let y1 = y.max(0) as usize;
@@ -319,5 +326,23 @@ impl Buffer
 
 		//println!("Buffer Write: {},{}", x, y);
 	}
+
+	/*pub fn get_cell(&self, x: u32, y: u32) -> BufferCell
+	{
+		let idx = x as usize + y as usize * self.width as usize;
+		BufferCell
+		{
+			char: self.chars[idx],
+			fg: self.foreground[idx], 
+			bg: self.background[idx], 
+		}
+	}*/
 }
 
+#[repr(C)]
+pub struct BufferCell
+{
+	pub char: *mut String,
+	pub fg: Color,
+	pub bg: Color,
+}

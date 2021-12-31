@@ -4,6 +4,7 @@ use super::{Buffer, Color, ScreenSize};
 use super::renderer::Renderer;
 
 use std::{sync::{Arc, Mutex}, thread, fmt::Debug};
+use fps_counter::FPSCounter;
 use winit::{platform::windows::EventLoopExtWindows, dpi::PhysicalPosition};
 use winit::window::Icon;
 use winit::{
@@ -93,7 +94,8 @@ struct Screen
 	input: InputHelper,
 	buffer: Arc<Mutex<Buffer>>,
 	window: Arc<Mutex<Option<Window>>>,
-	renderer: Renderer
+	title: String,
+	renderer: Renderer,
 }
 
 impl Debug for Screen
@@ -123,8 +125,9 @@ impl Screen
 
 		let event_loop: EventLoop<()> = EventLoop::new_any_thread();
 
+		let title = "Screen".to_string();
 		let window = WindowBuilder::new()
-		.with_title("Screen")
+		.with_title(&title)
 		.with_inner_size(PhysicalSize{width: size.window_width as f32, height: size.window_height as f32})
 		.with_maximized(false)
 		.with_resizable(false)
@@ -141,31 +144,27 @@ impl Screen
 			input,
 			buffer,
 			window: window_arc,
+			title,
 			renderer
 		}, event_loop)
 	}
 
 	fn run_event_loop(&mut self, mut event_loop: EventLoop<()>)
 	{
-		//let buffer = self.buffer;
+		let mut fps_counter = FPSCounter::new();
 
 		event_loop.run_return(|event, _, control_flow| {
 
-			//share.lock().unwrap().update(&mut renderer);
-	
 			if let event::Event::RedrawRequested(_) = event
 			{
 				self.perfom_resizeing();
 				if self.renderer.render(&self.buffer.lock().unwrap())
 				{
 					*control_flow = ControlFlow::Exit;
-					//title = "Screen ".to_string() + &fps_counter.tick().to_string();
-					//share.
-					//window.set_inner_size(PhysicalSize{width: 500.0, height: 400.0});
-					//window.set_title(&title);
 					return;
 				}
-				//println!("FPS: {}", fps_counter.tick());
+				self.title = format!("Screen {} fps", &fps_counter.tick());
+				self.window.lock().unwrap().as_mut().unwrap().set_title(&self.title);
 			}
 	
 			self.input.update(&event);

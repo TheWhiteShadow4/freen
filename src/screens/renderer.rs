@@ -90,9 +90,12 @@ impl Renderer
 
 	pub fn render(&mut self, buffer: &Buffer) -> bool
 	{
-		
 		let result = self.render_frame(buffer);
-		return result.ok().unwrap_or(false);
+		match result
+		{
+			Ok(_) => false,
+			Err(_e) => { false }
+		}
 	}
 
 	fn render_frame(&mut self, buffer: &Buffer) -> Result<bool, SurfaceError>
