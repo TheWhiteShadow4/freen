@@ -2,7 +2,7 @@
 name = "Freen"
 version = "0.2.0"
 edition = "2021"
-author = "TheWhiteShadow"
+authors = ["TheWhiteShadow"]
 description = "Fenster mit Zeichen Matrix zur Anzeige von FIN lua Programmen."
 
 

@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 #![allow(unused_parens)]
 
-use wgpu::{SurfaceError, CommandEncoder};
+use wgpu::SurfaceError;
 use winit::window::Window;
 
 use super::ScreenSize;

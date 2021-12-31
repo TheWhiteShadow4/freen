@@ -20,6 +20,7 @@ pub struct GenericComponent
 
 impl GenericComponent
 {
+	#![allow(dead_code)]
 	pub fn fire_event(&mut self, eventType: String, arg1: i32, arg2: i32, arg3: i32)
 	{
 		if self.emitter.is_none() {return;}

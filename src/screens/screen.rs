@@ -1,10 +1,10 @@
 
 use crate::{EventEmitter, component::{UID, Component, generateUID}, Event};
-use super::{Buffer, Color, Size, ScreenSize};
+use super::{Buffer, Color, ScreenSize};
 use super::renderer::Renderer;
 
 use std::{sync::{Arc, Mutex}, thread, fmt::Debug};
-use winit::platform::windows::EventLoopExtWindows;
+use winit::{platform::windows::EventLoopExtWindows, dpi::PhysicalPosition};
 use winit::window::Icon;
 use winit::{
 	event,
@@ -19,20 +19,19 @@ const EVENT_MOUSE_UP: &str = "OnMouseUp\0";
 const EVENT_MOUSE_MOVE: &str = "OnMouseMove\0";
 
 
-#[derive(Debug)]
 pub struct ScreenComponent
 {
 	id: UID,
 	pub fg: Color,
 	pub bg: Color,
 	font_size: u32,
-	buffer: Arc<Mutex<Buffer>>,
 	window: Arc<Mutex<Option<Window>>>,
+	emitter: Option<EventEmitter>
 }
 
 impl ScreenComponent
 {
-	pub fn new(width: u32, height: u32, font_size: u32) -> Self
+	pub fn new(width: u32, height: u32, font_size: u32, ) -> Self
 	{
 		assert!(width > 0);
 		assert!(height > 0);
@@ -42,21 +41,24 @@ impl ScreenComponent
 			fg: Color::WHITE,
 			bg: Color::BLACK,
 			font_size,
-			buffer: Arc::new( Mutex::new(Buffer::new(width, height))),
-			window: Arc::new( Mutex::new(None))
+			window: Arc::new( Mutex::new(None)),
+			emitter: None
 		}
 	}
 
-	pub fn open(&self, emitter: Option<EventEmitter>)
+	pub fn set_emitter(&mut self, emitter: Option<EventEmitter>)
 	{
-		let buf = self.buffer.lock().unwrap();
-		let width = buf.width;
-		let height = buf.height;
+		self.emitter = emitter;
+	}
+
+	pub fn open(&mut self, buffer: Arc<Mutex<Buffer>>)
+	{
 		let font_size = self.font_size;
-		let buffer = self.buffer.clone();
+		let emitter = self.emitter.take();
+		let buffer_arc = buffer.clone();
 		let window_arc = self.window.clone();
 		thread::spawn(move || {
-			let (mut screen, event_loop) = Screen::new(width, height, font_size, emitter, buffer, window_arc);
+			let (mut screen, event_loop) = Screen::new(font_size, emitter, buffer_arc, window_arc);
 			screen.run_event_loop(event_loop);
 		});
 	}
@@ -70,24 +72,18 @@ impl ScreenComponent
 		}
 	}
 
-	pub fn withBuffer<F>(&self, mut func: F) where F: FnMut(&mut Buffer)
-	{
-		func(&mut self.buffer.lock().unwrap());
-	}
-
 	pub fn isOpen(&self) -> bool
 	{
 		self.window.lock().unwrap().is_some()
 	}
 
-	/*pub fn set_emitter(&mut self, emitter: Option<EventEmitter>)
+	pub fn screen_location(&mut self, x: i32, y: i32)
 	{
-		self.share.lock().unwrap().setEmitter(emitter);
-	}*/
-
-	pub fn resize_screen(&mut self, width: u32, height: u32)
-	{
-		self.buffer.lock().unwrap().resize(width, height);
+		match self.window.lock().unwrap().as_ref()
+		{
+			Some(w) => w.set_outer_position(PhysicalPosition{x, y}),
+			None => {}
+		}
 	}
 }
 
@@ -112,8 +108,12 @@ impl Debug for Screen
 
 impl Screen
 {
-	fn new(width: u32, height: u32, font_size: u32, emitter: Option<EventEmitter>, buffer: Arc<Mutex<Buffer>>, window_arc: Arc<Mutex<Option<Window>>>) -> (Self, EventLoop<()>)
+	fn new(font_size: u32, emitter: Option<EventEmitter>, buffer: Arc<Mutex<Buffer>>, window_arc: Arc<Mutex<Option<Window>>>) -> (Self, EventLoop<()>)
 	{
+		let buf = buffer.lock().unwrap();
+		let width = buf.width;
+		let height = buf.height;
+		drop(buf);
 		let input = InputHelper::new(emitter, width, height);
 
 		let size = ScreenSize::from_grid(width, height, font_size);
@@ -121,7 +121,7 @@ impl Screen
 		let iconData = include_bytes!("icon.rgba");
 		let icon = Icon::from_rgba(iconData.to_vec(), 32, 32).ok();
 
-		let event_loop: EventLoop<()>  = EventLoop::new_any_thread();
+		let event_loop: EventLoop<()> = EventLoop::new_any_thread();
 
 		let window = WindowBuilder::new()
 		.with_title("Screen")
@@ -186,6 +186,7 @@ impl Screen
 			self.size.resize_grid(buffer.width, buffer.height);
 			self.window.lock().unwrap().as_ref().unwrap().set_inner_size(PhysicalSize{width: self.size.window_width as f32, height: self.size.window_height as f32});
 			self.renderer.resize(self.size);
+			self.input.resize(buffer.width, buffer.height);
 		}
 	}
 }
@@ -203,7 +204,8 @@ impl Component for ScreenComponent
 struct InputHelper
 {
 	emitter: Option<EventEmitter>,
-	grid: Size,
+	width: u32,
+	height: u32,
 	mouseX: i32,
 	mouseY: i32,
 	close: bool
@@ -213,7 +215,7 @@ impl InputHelper
 {
 	pub fn new(emitter: Option<EventEmitter>, width: u32, height: u32) -> Self
 	{
-		Self{emitter, grid: Size{width, height}, mouseX: 0, mouseY: 0, close: false}
+		Self{emitter, width, height, mouseX: 0, mouseY: 0, close: false}
 	}
 
 	pub fn update<T>(&mut self, event: &event::Event<T>)
@@ -228,6 +230,12 @@ impl InputHelper
 		}
 	}
 
+	pub fn resize(&mut self, width: u32, height: u32)
+	{
+		self.width = width;
+		self.height = height;
+	}
+
 	fn handleWindowEvents(&mut self, event: &WindowEvent)
 	{
 		let em = self.emitter.as_mut().unwrap();
@@ -237,33 +245,34 @@ impl InputHelper
 				button,
 				..
 			} => {
-				em.send(Event
-					{
-						eventType: EVENT_MOUSE_DOWN.to_string(),
-						component: em.owner(),
-						arg1: self.mouseX,
-						arg2: self.mouseY,
-						arg3: mouse_button_to_int(button)});
+				em.send(Event {
+					eventType: EVENT_MOUSE_DOWN.to_string(),
+					component: em.owner(),
+					arg1: self.mouseX,
+					arg2: self.mouseY,
+					arg3: mouse_button_to_int(button)});
 			},
 			WindowEvent::MouseInput {
 				state: ElementState::Released,
 				button,
 				..
 			} => {
-				em.send(Event
-					{
-						eventType: EVENT_MOUSE_UP.to_string(),
-						component: em.owner(),
-						arg1: self.mouseX,
-						arg2: self.mouseY,
-						arg3: mouse_button_to_int(button)});
+				em.send(Event {
+					eventType: EVENT_MOUSE_UP.to_string(),
+					component: em.owner(),
+					arg1: self.mouseX,
+					arg2: self.mouseY,
+					arg3: mouse_button_to_int(button)});
 			},
 			WindowEvent::CursorMoved {
 				position,
 				..
 			} => {
-				self.mouseX = (position.x / self.grid.width as f64) as i32;
-				self.mouseY = (position.y / self.grid.height as f64) as i32;
+				let mouseX = (position.x / self.width as f64) as i32;
+				let mouseY = (position.y / self.height as f64) as i32;
+				if mouseX == self.mouseX && mouseY == self.mouseY {return;}
+				self.mouseX = mouseX;
+				self.mouseY = mouseY;
 				em.send(Event
 					{
 						eventType: EVENT_MOUSE_MOVE.to_string(),
@@ -272,7 +281,6 @@ impl InputHelper
 						arg2: self.mouseY,
 						arg3: 0});
 			},
-
 			WindowEvent::CloseRequested => self.close = true,
 			_ => {}
 		}

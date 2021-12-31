@@ -1,3 +1,7 @@
+use std::sync::{Arc, Mutex};
+
+use self::screen::ScreenComponent;
+
 
 pub mod renderer;
 pub mod screen;
@@ -136,6 +140,67 @@ impl ScreenSize
 	}
 }
 
+#[repr(C)]
+pub struct GraphicHandle
+{
+	pub buffer: Arc<Mutex<Buffer>>,
+	//pub screen: Option<&'a ScreenComponent>,
+	pub screen: Option<ScreenComponent>,
+	pub fg: Color,
+	pub bg: Color
+}
+
+impl GraphicHandle
+{
+	pub fn new(width: u32, height: u32) -> Self
+	{
+		Self
+		{
+			buffer: Arc::new( Mutex::new(Buffer::new(width, height))),
+			screen: None,
+			fg: Color::WHITE,
+			bg: Color::BLACK,
+		}
+	}
+
+	pub fn unsafe_bind_screen(&mut self, screen: ScreenComponent)
+	{
+		let mut s = screen;
+		s.open(self.buffer.clone());
+		//self.screen = Some(Box::leak(Box::new(s)));
+		self.screen = Some(s);
+	}
+
+	pub fn resize_screen(&mut self, width: u32, height: u32)
+	{
+		self.buffer.lock().unwrap().resize(width, height);
+	}
+
+	pub fn get_buffer(&self) -> Buffer
+	{
+		self.buffer.lock().unwrap().clone()
+	}
+
+	pub fn set_buffer(&self, other: &Buffer)
+	{
+		self.buffer.lock().unwrap().replace(other);
+	}
+
+	pub fn exec<F>(&self, mut func: F) where F: FnMut(&mut Buffer)
+	{
+		func(&mut self.buffer.lock().unwrap());
+	}
+
+	pub fn flush(&mut self)
+	{
+		if self.screen.is_some()
+		{
+			self.screen.as_ref().unwrap().flush();
+		}
+	}
+}
+
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Buffer
 {
@@ -144,7 +209,6 @@ pub struct Buffer
 	pub chars: Vec<char>,
 	pub foreground: Vec<Color>,
 	pub background: Vec<Color>,
-	pub modified: Vec<bool>,
 }
 
 impl Buffer
@@ -162,9 +226,6 @@ impl Buffer
 		let mut background = Vec::with_capacity(size);
 		background.resize(size, Color::BLACK);
 
-		let mut modified = Vec::with_capacity(size);
-		modified.resize(size, false);
-
 		Buffer
 		{
 			width,
@@ -172,7 +233,6 @@ impl Buffer
 			chars,
 			foreground,
 			background,
-			modified,
 		}
 	}
 
@@ -185,7 +245,6 @@ impl Buffer
 		self.chars.resize(size, char::default());
 		self.foreground.resize(size, Color::WHITE);
 		self.background.resize(size, Color::BLACK);
-		self.modified.resize(size, false);
 	}
 
 	pub fn copy(&mut self, _x: i32, _y: i32, _other: Buffer)
@@ -211,6 +270,15 @@ impl Buffer
 
 			self.chars[(x1 + d1)..(x1+d1+n)].copy_from_slice(&other.chars[(x2+d2)..(x2+d2+n)]);
 		}*/
+	}
+
+	pub fn replace(&mut self, other: &Buffer)
+	{
+		self.width = other.width;
+		self.height = other.height;
+		self.chars = other.chars.clone();
+		self.foreground = other.foreground.clone();
+		self.background = other.background.clone();
 	}
 
 	pub fn fill(&mut self, x: i32, y: i32, w: i32, h: i32, char: char, fg: Color, bg: Color)
@@ -248,7 +316,6 @@ impl Buffer
 		self.chars[idx] = char;
 		self.foreground[idx] = fg;
 		self.background[idx] = bg;
-		self.modified[idx] = true;
 
 		//println!("Buffer Write: {},{}", x, y);
 	}

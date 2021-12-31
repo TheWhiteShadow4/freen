@@ -21,12 +21,11 @@ Class.__index = Class
 function defineClass(c, cls)
 	setmetatable(cls, Class)
 	cls.instantiate = function()
-		o = {}
+		local o = c.new and c:new() or {}
 		setmetatable(o, c)
 		c.__index = c
 		c.__tostring = function(self) return self.getType().name end
 		c.getType = function() return cls end
-		if o.new then o:new() end
 		return o
 	end
 	for _,n in pairs(cls.aliase) do
@@ -38,7 +37,7 @@ end
 
 
 
-table.keys = function(t)
+local table_keys = function(t)
 	local keys={}
 	local n=0
 	for k,_ in pairs(t) do
@@ -50,8 +49,8 @@ end
 
 
 function lazyArray(func, ...)
-	a = {}
-	args = {...}
+	local a = {}
+	local args = {...}
 	setmetatable(a, {
 		__index = function(a, i)
 			if i > 0 then
@@ -80,12 +79,13 @@ local Component = {
 --- Erstellt ein Array mit einer neuen virtuellen Netzwerk Komponente mit zufällig generierter Id.
 --- Die so erstellte Komponente wird dem Netzwerk hinzugefügt.
 function createComponentIds(query, nick)
-	id = ""
+	local id = ""
 	for i = 1,32 do
 		r = math.random(0, 15)
 		id = id..(r > 9 and string.char(r + 55) or r)
 	end
 	-- Komponente erstellen und ins Netzwerk einfügen.
+	local comp
 	if getmetatable(query) == Class then
 		comp = query:instantiate()
 	else
@@ -126,9 +126,9 @@ computer = {
 
 component = {
 	proxy = function(ids)
-		if ids[1] ~= nil then
+		if type(ids) == 'table' then
 			ret = {}
-			for _,id in pairs(c) do
+			for _,id in pairs(ids) do
 				table.insert(ret, component.proxy(id))
 			end
 			return ret
@@ -149,12 +149,18 @@ component = {
 			end
 			return ids
 		elseif query == "" then
-			table.keys(Network)
+			return table_keys(Network)
 		else
 			return lazyArray(createComponentIds, query, nil)
 		end
 	end
 }
+
+local EVENT_QUEUE = {}
+
+function queueEvent(type, comp, ...)
+	table.insert(EVENT_QUEUE, {type, comp, ...})
+end
 
 event = {
 	listen = function(c) end,
@@ -163,7 +169,11 @@ event = {
 	ignoreAll = function() end,
 	clear = function() end,
 	pull = function(n)
-		if n ~= nil and n > 0 then ffi.C.Sleep(n*1000.0) end
+		if #EVENT_QUEUE > 0 then
+			return table.unpack(table.remove(EVENT_QUEUE))
+		else
+			if n ~= nil and n > 0 then ffi.C.Sleep(n*1000.0) end
+		end
 	end
 }
 
@@ -216,10 +226,7 @@ function Actor:getNetworkConnectors()
 	return {}
 end
 
-GPUT1Buffer = {
-	width=120,
-	height=30
-}
+GPUT1Buffer = {}
 
 function GPUT1Buffer:setSize(w, h)
 	self.width = w
@@ -240,7 +247,7 @@ function GPUT1Buffer:clone()
 	return GPUT1Buffer:new({width=self.width, height=self.height})
 end
 
-function GPUT1Buffer:new()
+function GPUT1Buffer:new(o)
 	o = o or {}
 	setmetatable(o, self)
 	self.__index = self
@@ -248,19 +255,31 @@ function GPUT1Buffer:new()
 end
 
 FINComputerGPU = {
-	screen=nil,
-	buffer=GPUT1Buffer:new(),
-	fg = {r=1.0,g=1.0,b=1.0,a=1.0},
-	bg = {r=0.0,g=0.0,b=0.0,a=1.0},
+	_width=120,
+	_height=40
 }
+
+function FINComputerGPU:new()
+	--print("FINComputerGPU:new()", dump(self, 1))
+	local o = {
+		screen=nil,
+		buffer=GPUT1Buffer:new({self._width, self._height}),
+		fg = {r=1.0,g=1.0,b=1.0,a=1.0},
+		bg = {r=0.0,g=0.0,b=0.0,a=1.0},
+	}
+	return o
+end
+
 function FINComputerGPU:bindScreen(screen)
 	self.screen = screen
 end
 function FINComputerGPU:setSize(w, h)
+	local oldW, oldH = self.buffer:getSize()
 	self.buffer:setSize(w, h)
+	queueEvent(ScreenSizeChanged, self, oldW, oldH)
 end
 function FINComputerGPU:getSize()
-	return self.buffer.getSize()
+	return self.buffer:getSize()
 end
 function FINComputerGPU:setForeground(r, g, b, a)
 	self.fg.r = r
@@ -285,8 +304,8 @@ end
 function FINComputerGPU:getScreen() return self.screen end
 function FINComputerGPU:getBuffer() return self.buffer end
 function FINComputerGPU:flush() end
-function FINComputerGPU:fill(x, y, w, h, str) end
-function FINComputerGPU:setText(x, y, str) buffer:setText(x, y, str) end
+function FINComputerGPU:fill(x, y, w, h, str) self.buffer:fill(x, y, w, h, str) end
+function FINComputerGPU:setText(x, y, str) self.buffer:setText(x, y, str) end
 
 defineClass(FINComputerGPU, {
 	aliase = {"GPU_T1_C", "GPUT1"},
