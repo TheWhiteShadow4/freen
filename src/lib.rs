@@ -213,15 +213,15 @@ pub unsafe extern "C" fn destroy(ptr: *mut ScreenComponent)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn foreground(ptr: *mut GraphicHandle, r: f32, g: f32, b: f32, a: f32)
+pub unsafe extern "C" fn foreground(ptr: *mut GraphicHandle, col: Color)
 {
-	handle(ptr).fg = Color::new(r, g, b, a);
+	handle(ptr).fg = col;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn background(ptr: *mut GraphicHandle, r: f32, g: f32, b: f32, a: f32)
+pub unsafe extern "C" fn background(ptr: *mut GraphicHandle, col: Color)
 {
-	handle(ptr).bg = Color::new(r, g, b, a);
+	handle(ptr).bg = col;
 }
 
 #[no_mangle]
@@ -303,9 +303,9 @@ pub unsafe extern "C" fn buf_resize(ptr: *mut Buffer, width: u32, height: u32)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn buf_copy(ptr: *mut Buffer, x: i32, y: i32, other: *mut Buffer)
+pub unsafe extern "C" fn buf_copy(ptr: *mut Buffer, x: i32, y: i32, other: *mut Buffer, txtbm: u8, fgbm: u8, bgbm: u8)
 {
-	handle(ptr).copy(x, y, handle(other));
+	handle(ptr).copy(x, y, handle(other), txtbm, fgbm, bgbm);
 }
 
 #[no_mangle]

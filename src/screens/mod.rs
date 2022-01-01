@@ -41,48 +41,19 @@ impl Color
 		Color{r, g, b, a}
 	}
 
+	pub fn alphaBlend(&self, other: Color) -> Color
+	{
+		let r = other.a * other.r + (1.0 - other.a) * self.r;
+		let g = other.a * other.g + (1.0 - other.a) * self.g;
+		let b = other.a * other.b + (1.0 - other.a) * self.b;
+		Color{r, g, b, a: 1.0}
+	}
+
 	#[inline]
 	pub fn bytes(&self) -> [u8; 4]
 	{
 		[(self.r * 255.0) as u8, (self.g * 255.0) as u8, (self.b * 255.0) as u8, (self.a * 255.0) as u8]
 	}
-
-	/*pub fn hsl(&self) -> (f32, f32, f32)
-	{
-		let r = self.red() as f32 / 255.;
-		let g = self.green() as f32 / 255.;
-		let b = self.blue() as f32 / 255.;
-		let max = max!(r, g, b);
-		let min = min!(r, g, b);
-		let mut h: f32;
-		let s: f32;
-		let l: f32 = (max + min) / 2.;
-	
-		if (max == min)
-		{
-			h = 0.;
-			s = 0.;
-		}
-		else
-		{
-			let d = max - min;
-			s = if (l > 0.5) { d / (2.0 - max - min) } else { d / (max + min) };
-			h = if (max == r)
-			{
-				(g - b) / d + if (g < b) {6.} else {0.}
-			}
-			else if (max == g)
-			{
-				(b - r) / d + 2.
-			}
-			else
-			{
-				(r - g) / d + 4.
-			};
-			h /= 6.0;
-		}
-		return (h, s, l);
-    }*/
 }
 
 impl Into<[f32; 4]> for Color
@@ -254,29 +225,53 @@ impl Buffer
 		self.background.resize(size, Color::BLACK);
 	}
 
-	pub fn copy(&mut self, _x: i32, _y: i32, _other: &Buffer)
+	pub fn copy(&mut self, x: i32, y: i32, other: &Buffer, txtbm: u8, fgbm: u8, bgbm: u8)
 	{
-		/*let x1 = x.max(0) as usize;
-		let y1 = y.max(0) as usize;
-		let x2: usize;
-		if x < 0
-			{ x2 = (other.width - (-x) as u32).min(self.width) as usize; }
-		else
-			{ x2 = (self.width - x as u32).min(other.width) as usize; }
-		let y2: usize;
-		if y < 0
-			{ y2 = (other.height - (-y) as u32).min(self.height) as usize; }
-		else
-			{ y2 = (self.height - y as u32).min(other.height) as usize; }
+		let dst_x = x.max(0) as u32;
+		let dst_y = y.max(0) as u32;
+		let mut src_x = 0;
+		let mut src_y = 0;
+		if x < 0 { src_x = (-x) as u32; }
+		if y < 0 { src_y = (-y) as u32; }
+		let w = (self.width - dst_x).min(other.width - src_x) as usize;
+		let h = (self.height - dst_y).min(other.height - src_y) as usize;
 
-		let n = (self.width as usize - x1).min(other.width as usize - x2);
-		for line in y1..y2
+		for line in 0..(h as u32)
 		{
-			let d1 = self.width * line;
-			let d2 = other.width * line;
+			let src_idx = ((src_y + line) * other.width + src_x) as usize;
+			let dst_idx = ((dst_y + line) * self.width + dst_x) as usize;
 
-			self.chars[(x1 + d1)..(x1+d1+n)].copy_from_slice(&other.chars[(x2+d2)..(x2+d2+n)]);
-		}*/
+			match txtbm
+			{
+				0 => self.chars[dst_idx..(dst_idx+w)].copy_from_slice(&other.chars[src_idx..(src_idx+w)]),
+				1 => Buffer::copy_chars(
+					&mut self.chars[dst_idx..(dst_idx+w)], 
+					&other.chars[src_idx..(src_idx+w)], 
+					|s, d| match s.is_whitespace() {true => d, false => s}),
+				2 => Buffer::copy_chars(
+					&mut self.chars[dst_idx..(dst_idx+w)], 
+					&other.chars[src_idx..(src_idx+w)], 
+					|s, d| match s.is_whitespace() {true => s, false => d}),
+				_ => {}
+			}
+			if fgbm < 9
+			{
+				self.foreground[dst_idx..(dst_idx+w)].copy_from_slice(&other.foreground[src_idx..(src_idx+w)]);
+			}
+			if bgbm < 9
+			{
+				self.background[dst_idx..(dst_idx+w)].copy_from_slice(&other.background[src_idx..(src_idx+w)]);
+			}
+		}
+	}
+
+	#[inline]
+	fn copy_chars<T, F>(dst: &mut [T], src: &[T], map: F) where T: Copy, F: Fn(T, T) -> T
+	{
+		for i in 0..src.len()
+		{
+			dst[i] = map(src[i], dst[i]);
+		}
 	}
 
 	pub fn replace(&mut self, other: &Buffer)

@@ -15,10 +15,12 @@ use winit::{
 };
 use winit::event::{WindowEvent, ElementState, MouseButton};
 
+const EVENT_WINDOW_CLOSED: &str = "WindowClosed\0";
 const EVENT_MOUSE_DOWN: &str = "OnMouseDown\0";
 const EVENT_MOUSE_UP: &str = "OnMouseUp\0";
 const EVENT_MOUSE_MOVE: &str = "OnMouseMove\0";
-
+const EVENT_KEY_DOWN: &str = "OnKeyDown\0";
+const EVENT_KEY_UP: &str = "OnKeyUp\0";
 
 pub struct ScreenComponent
 {
@@ -207,6 +209,7 @@ struct InputHelper
 	height: u32,
 	mouseX: i32,
 	mouseY: i32,
+	modifiers: i32,
 	close: bool
 }
 
@@ -214,7 +217,7 @@ impl InputHelper
 {
 	pub fn new(emitter: Option<EventEmitter>, width: u32, height: u32) -> Self
 	{
-		Self{emitter, width, height, mouseX: 0, mouseY: 0, close: false}
+		Self{emitter, width, height, mouseX: 0, mouseY: 0, modifiers: 0, close: false }
 	}
 
 	pub fn update<T>(&mut self, event: &event::Event<T>)
@@ -272,15 +275,47 @@ impl InputHelper
 				if mouseX == self.mouseX && mouseY == self.mouseY {return;}
 				self.mouseX = mouseX;
 				self.mouseY = mouseY;
-				em.send(Event
-					{
+				em.send(Event {
 						eventType: EVENT_MOUSE_MOVE.to_string(),
 						component: em.owner(),
 						arg1: self.mouseX,
 						arg2: self.mouseY,
 						arg3: 0});
 			},
-			WindowEvent::CloseRequested => self.close = true,
+			WindowEvent::KeyboardInput {
+				input,
+				..
+			} => {
+				let eventType = match input.state
+				{
+        			ElementState::Pressed => EVENT_KEY_DOWN,
+        			ElementState::Released => EVENT_KEY_UP,
+    			}.to_string();
+				let key = match input.virtual_keycode
+				{
+					Some(k) => k as i32,
+					None => 0
+				};
+				em.send(Event { eventType, component: em.owner(), arg1: input.scancode as i32, arg2: key, arg3: self.modifiers });
+			},
+			WindowEvent::ModifiersChanged(modifiers) => {
+				let mut bits = 0i32;
+				//if mouseleft() { bits |=  1 << 0; }
+				//if mouseright() { bits |=  1 << 1; }
+				if modifiers.ctrl()  { bits |= 1 << 2; }
+				if modifiers.shift() { bits |= 1 << 3; }
+				if modifiers.alt()   { bits |= 1 << 4; }
+				if modifiers.logo()  { bits |= 1 << 5; }
+				self.modifiers = bits;
+			},
+			WindowEvent::CloseRequested => {
+				self.close = true;
+				em.send(Event {
+					eventType: EVENT_WINDOW_CLOSED.to_string(),
+					component: em.owner(),
+					arg1: 0, arg2: 0, arg3: 0
+				});
+			},
 			_ => {}
 		}
 	}

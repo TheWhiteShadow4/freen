@@ -1,7 +1,44 @@
+lfs = require "lfs"
 ffi = require("ffi")
 ffi.cdef[[
 void Sleep(int ms);
 ]]
+
+local function class(base, init)
+	local c = {}
+	if not init and type(base) == 'function' then
+		init = base
+		base = nil
+	elseif type(base) == 'table' then
+		for i,v in pairs(base) do c[i] = v end
+		c._base = base
+	end
+	c.__index = c
+	local mt = {}
+	mt.__call = function(class_tbl, ...)
+		local obj = {}
+		setmetatable(obj,c)
+		if init then
+			init(obj,...)
+		else 
+		if base and base.init then
+		base.init(obj, ...)
+		end
+	end
+		return obj
+	end
+	c.init = init
+	c.is_a = function(self, klass)
+		local m = getmetatable(self)
+		while m do 
+			if m == klass then return true end
+			m = m._base
+		end
+		return false
+	end
+	setmetatable(c, mt)
+	return c
+end
 
 local classes = {}
 
@@ -76,14 +113,19 @@ local Component = {
 	__tostring = function(o) return o.id end
 }
 
---- Erstellt ein Array mit einer neuen virtuellen Netzwerk Komponente mit zufällig generierter Id.
---- Die so erstellte Komponente wird dem Netzwerk hinzugefügt.
-function createComponentIds(query, nick)
+local function newUID()
 	local id = ""
 	for i = 1,32 do
 		r = math.random(0, 15)
 		id = id..(r > 9 and string.char(r + 55) or r)
 	end
+	return id
+end
+
+--- Erstellt ein Array mit einer neuen virtuellen Netzwerk Komponente mit zufällig generierter Id.
+--- Die so erstellte Komponente wird dem Netzwerk hinzugefügt.
+function createComponentIds(query, nick)
+	local id = newUID()
 	-- Komponente erstellen und ins Netzwerk einfügen.
 	local comp
 	if getmetatable(query) == Class then
@@ -109,7 +151,10 @@ computer = {
 	getInstance = function() end,
 	beep = function(pitch) end,
 	stop = function() os.exit() end,
-	panic = function(error) end,
+	panic = function(error)
+		print(error)
+		computer.stop()
+	end,
 	reset = function() end,
 	skip = function() end,
 	getEEPROM = function() end,
@@ -177,22 +222,76 @@ event = {
 	end
 }
 
+FS_ROOT = "drives"
+local ROOT_DEVICE = nil
+local DRIVES = {}
+
+local function startsWith(str, c)
+	if (#str < #c) then return false end
+    return string.sub(str, 1, #c) == c
+end
+
+local function findFile(name)
+	for k,v in pairs(DRIVES) do
+		if startsWith(name, k) then
+			local path = '/'..FS_ROOT..v..string.sub(name, #k+1, #name)
+			return string.gsub(lfs.currentdir(), "\\", "/")..path
+		end
+	end
+	return nil
+end
+
+FileSystem = class(Component, function(p, device)
+	p.id = newUID()
+	p.device = device
+	p.mounted = false
+end)
+
 filesystem = {
-	initFileSystem = function(path) end,
+	initFileSystem = function(path)
+		if ROOT_DEVICE ~= nil then return false end
+		path = string.gsub(path, '/$', '')
+		ROOT_DEVICE = path
+	end,
 	makeFileSystem = function(type, name) end,
 	removeFileSystem = function(name) end,
-	mount = function(device, mountPoint) end,
-	open = function(path, mode) end,
+	mount = function(device, mountPoint)
+		if startsWith(device, ROOT_DEVICE) then
+			local drive = string.sub(device, #ROOT_DEVICE+1, #device)
+			drive = string.gsub(drive, '^/', '')
+			if drive ~= nil then
+				mountPoint = string.gsub(mountPoint, '^/', '')
+				DRIVES[mountPoint] = drive
+				return os.rename(FS_ROOT, FS_ROOT) and true or false
+			end
+			return false
+		end
+	end,
+	open = function(path, mode)
+		path = string.gsub(path, '^/', '')
+		local file = findFile(path)
+		return io.open(file, mode)
+	end,
 	createDir = function(path) end,
 	remove = function(path) end,
 	move = function(from, to) end,
 	rename = function(path, name) end,
-	childs = function(path) end,
+	childs = function(path)
+		if ROOT_DEVICE == nil then error("no device at path found", 2) end
+		local list = {}
+		local entry
+		for entry in lfs.dir(FS_ROOT) do
+			if entry ~= "." and entry ~= ".." then
+				table.insert(list, '/'..entry)
+			end
+		end
+		return list
+	end,
 	exists = function(path) end,
 	isFile = function(path) end,
 	isDir = function(path) end,
 	doFile = function(path) end,
-	loadFile = function(path) end
+	loadFile = function(path) end,
 }
 
 Actor = {

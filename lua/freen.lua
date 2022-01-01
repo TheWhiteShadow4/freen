@@ -13,8 +13,8 @@ uintptr_t create(uint32_t w, uint32_t h, uint32_t f, uintptr_t h);
 void destroy(uintptr_t s);
 void set_size(uintptr_t g, uint32_t width, uint32_t height);
 void set_location(uintptr_t s, int32_t x, int32_t y);
-void foreground(uintptr_t g, float r, float g, float b, float a);
-void background(uintptr_t g, float r, float g, float b, float a);
+void foreground(uintptr_t g, color c);
+void background(uintptr_t g, color c);
 void fill(uintptr_t g, int32_t x, int32_t y, int32_t w, int32_t h, const char *ch);
 void write_text(uintptr_t g, int32_t x, int32_t y, const char *ch);
 void write(uintptr_t g, int32_t x, int32_t y, const char *ch);
@@ -23,7 +23,7 @@ uintptr_t get_buffer(uintptr_t g);
 void set_buffer(uintptr_t g, uintptr_t b);
 size buf_size(uintptr_t b);
 void buf_resize(uintptr_t b, uint32_t w, uint32_t h);
-void buf_copy(uintptr_t b, int32_t x, int32_t y, uintptr_t b2);
+void buf_copy(uintptr_t b, int32_t x, int32_t y, uintptr_t b2, uint8_t tbm, uint8_t fbm, uint8_t bbm);
 uintptr_t buf_clone(uintptr_t b);
 void buf_fill(uintptr_t b, int32_t x, int32_t y, int32_t w, int32_t h, const char *ch, color fg, color bg);
 void buf_write(uintptr_t b, int32_t x, int32_t y, const char *ch, color fg, color bg);
@@ -60,12 +60,12 @@ function FINComputerGPU:getSize(w, h)
 	return self._width, self._height
 end
 
-function FINComputerGPU:setForeground(r, g, b, a)
-	freen.foreground(self._handle, r, g, b, a)
+function FINComputerGPU:setForeground(col)
+	freen.foreground(self._handle, col)
 end
 
-function FINComputerGPU:setBackground(r, g, b, a)
-	freen.background(self._handle, r, g, b, a)
+function FINComputerGPU:setBackground(col)
+	freen.background(self._handle, col)
 end
 
 function FINComputerGPU:flush()
@@ -119,21 +119,25 @@ function GPUT1Buffer:setSize(w, h)
 	freen.buf_resize(self._handle, w, h)
 end
 
-function GPUT1Buffer:getSize(x, y, w, h, c, fg, bg)
+function GPUT1Buffer:getSize()
 	size = freen.buf_size(self._handle)
 	return size.width, size.height
 end
 
 function GPUT1Buffer:fill(x, y, w, h, c, fg, bg)
+	if type(fg) == 'number' then fg = {fg, fg, fg, fg} end
+	if type(bg) == 'number' then bg = {bg, bg, bg, bg} end
 	freen.buf_fill(self._handle, x, y, w, h, c, fg, bg)
 end
 
 function GPUT1Buffer:setText(x, y, txt, fg, bg)
+	if type(fg) == 'number' then fg = {fg, fg, fg, fg} end
+	if type(bg) == 'number' then bg = {bg, bg, bg, bg} end
 	freen.buf_write(self._handle, x, y, txt, fg, bg)
 end
 
-function GPUT1Buffer:copy(x, y, buffer)
-	freen.buf_copy(self._handle, x, y, buffer._handle)
+function GPUT1Buffer:copy(x, y, buffer, txtbm, fgbm, bgbm)
+	freen.buf_copy(self._handle, x, y, buffer._handle, txtbm, fgbm, bgbm)
 end
 
 function GPUT1Buffer:get(x, y, buffer)
