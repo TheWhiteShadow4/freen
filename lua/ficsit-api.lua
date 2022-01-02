@@ -4,7 +4,7 @@ ffi.cdef[[
 void Sleep(int ms);
 ]]
 
-local function class(base, init)
+function class(base, init)
 	local c = {}
 	if not init and type(base) == 'function' then
 		init = base
@@ -72,8 +72,6 @@ function defineClass(c, cls)
 	return c
 end
 
-
-
 local table_keys = function(t)
 	local keys={}
 	local n=0
@@ -83,7 +81,6 @@ local table_keys = function(t)
 	end
 	return keys
 end
-
 
 function lazyArray(func, ...)
 	local a = {}
@@ -109,10 +106,6 @@ end
 Network = Network or {}
 ALIASES = {}
 
-local Component = {
-	__tostring = function(o) return o.id end
-}
-
 local function newUID()
 	local id = ""
 	for i = 1,32 do
@@ -121,6 +114,12 @@ local function newUID()
 	end
 	return id
 end
+
+local Component = class(function(p)
+	p.id = newUID()
+end)
+
+function Component:__tostring() return self.id end
 
 --- Erstellt ein Array mit einer neuen virtuellen Netzwerk Komponente mit zufällig generierter Id.
 --- Die so erstellte Komponente wird dem Netzwerk hinzugefügt.
@@ -222,7 +221,7 @@ event = {
 	end
 }
 
-FS_ROOT = "drives"
+FS_ROOT = "drives/"
 local ROOT_DEVICE = nil
 local DRIVES = {}
 
@@ -231,10 +230,17 @@ local function startsWith(str, c)
     return string.sub(str, 1, #c) == c
 end
 
+local function stripPath(path)
+	if path == "/" then return path end
+	path = string.gsub(path..'/', '/+$', '/')
+	path = string.gsub(path, '^/+', '')
+	return path
+end
+
 local function findFile(name)
 	for k,v in pairs(DRIVES) do
 		if startsWith(name, k) then
-			local path = '/'..FS_ROOT..v..string.sub(name, #k+1, #name)
+			local path = '/'..v..string.sub(name, #k+1, #name)
 			return string.gsub(lfs.currentdir(), "\\", "/")..path
 		end
 	end
@@ -242,7 +248,6 @@ local function findFile(name)
 end
 
 FileSystem = class(Component, function(p, device)
-	p.id = newUID()
 	p.device = device
 	p.mounted = false
 end)
@@ -250,25 +255,27 @@ end)
 filesystem = {
 	initFileSystem = function(path)
 		if ROOT_DEVICE ~= nil then return false end
-		path = string.gsub(path, '/$', '')
+		path = stripPath(path)
+		if path == "/" then error("Empty device is not allowed.", 2) end
 		ROOT_DEVICE = path
 	end,
 	makeFileSystem = function(type, name) end,
 	removeFileSystem = function(name) end,
 	mount = function(device, mountPoint)
+		device = stripPath(device)
 		if startsWith(device, ROOT_DEVICE) then
 			local drive = string.sub(device, #ROOT_DEVICE+1, #device)
-			drive = string.gsub(drive, '^/', '')
 			if drive ~= nil then
+				drive = FS_ROOT..drive
 				mountPoint = string.gsub(mountPoint, '^/', '')
 				DRIVES[mountPoint] = drive
-				return os.rename(FS_ROOT, FS_ROOT) and true or false
+				return os.rename(drive, drive) and true or false
 			end
 			return false
 		end
 	end,
 	open = function(path, mode)
-		path = string.gsub(path, '^/', '')
+		path = string.gsub(path, '^//', '/')
 		local file = findFile(path)
 		return io.open(file, mode)
 	end,
