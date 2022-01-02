@@ -14,6 +14,7 @@ pub struct Renderer
 	device: wgpu::Device,
 	queue: wgpu::Queue,
 	surface: wgpu::Surface,
+	surface_format: wgpu::TextureFormat,
 	present_mode: wgpu::PresentMode,
 	grid: PixelGrid,
 	text: TextGrid,
@@ -43,28 +44,27 @@ impl Renderer
 				.expect("Request device")
 		});
 
-		let texture_format = wgpu::TextureFormat::Bgra8UnormSrgb;
-		let grid = PixelGrid::new(&device,
-			size,
-			texture_format);
+		let surface_format = wgpu::TextureFormat::Bgra8Unorm;
+		let grid = PixelGrid::new(&device, size, surface_format);
 
 		surface.configure(
 			&device,
 			&wgpu::SurfaceConfiguration {
 				usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-				format: texture_format,
+				format: surface_format,
 				width: size.window_width,
 				height: size.window_height,
 				present_mode,
 			},
 		);
 
-		let text = TextGrid::new(&device, size, texture_format);
+		let text = TextGrid::new(&device, size, surface_format);
 
 		Self{
 			device,
 			queue,
 			surface,
+			surface_format,
 			present_mode,
 			grid,
 			text
@@ -77,7 +77,7 @@ impl Renderer
 			&self.device,
 			&wgpu::SurfaceConfiguration {
 				usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-				format: wgpu::TextureFormat::Bgra8UnormSrgb,
+				format: self.surface_format,
 				width: size.window_width,
 				height: size.window_height,
 				present_mode: self.present_mode,
@@ -101,6 +101,7 @@ impl Renderer
 	fn render_frame(&mut self, buffer: &Buffer) -> Result<bool, SurfaceError>
 	{
 		let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {label: Some("Redraw")});
+
 		// Get the next frame
 		let frame = self.surface.get_current_texture()?;
 		let view = &frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -127,6 +128,7 @@ impl Renderer
 		self.grid.draw_queued(&self.device, &self.queue, &mut encoder, view, buffer);
 		// Zeichen den Vordergrund
 		self.text.draw(&self.device, &mut encoder, view, buffer);
+		//self.grid.draw_queued(&self.device, &self.queue, &mut encoder, view, buffer);
 
 		self.queue.submit(Some(encoder.finish()));
 		frame.present();

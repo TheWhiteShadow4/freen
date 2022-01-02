@@ -27,6 +27,7 @@ void buf_copy(uintptr_t b, int32_t x, int32_t y, uintptr_t b2, uint8_t tbm, uint
 uintptr_t buf_clone(uintptr_t b);
 void buf_fill(uintptr_t b, int32_t x, int32_t y, int32_t w, int32_t h, const char *ch, color fg, color bg);
 void buf_write(uintptr_t b, int32_t x, int32_t y, const char *ch, color fg, color bg);
+void buf_set(uintptr_t b, int32_t x, int32_t y, const char *ch, color fg, color bg);
 cell buf_get(uintptr_t b, uint32_t x, uint32_t y);
 ]]
 local libDir = debug.getinfo(1).source:match("@?(.*/)")
@@ -140,6 +141,12 @@ function GPUT1Buffer:copy(x, y, buffer, txtbm, fgbm, bgbm)
 	freen.buf_copy(self._handle, x, y, buffer._handle, txtbm, fgbm, bgbm)
 end
 
+function GPUT1Buffer:set(x, y, txt, fg, bg)
+	if type(fg) == 'number' then fg = {fg, fg, fg, fg} end
+	if type(bg) == 'number' then bg = {bg, bg, bg, bg} end
+	freen.buf_set(self._handle, x, y, txt, fg, bg)
+end
+
 function GPUT1Buffer:get(x, y, buffer)
 	local cell = freen.buf_get(self._handle, x, y)
 	if cell == nil then return nil end
@@ -156,26 +163,21 @@ function GPUT1Buffer:clone()
 	return clone
 end
 
-function FINComputerGPU:new()
-	--print("new FINComputerGPU:new()", self._width, self._height)
-	local o = {
-		screen=nil,
-		fg = {r=1.0,g=1.0,b=1.0,a=1.0},
-		bg = {r=0.0,g=0.0,b=0.0,a=1.0}
-	}
-	o._handle = freen.graphic_handle(self._width, self._height)
-	return o
+function FINComputerGPU:init()
+	self._width=120
+	self._height=40
+	self.screen=nil
+	self.fg = {r=1.0,g=1.0,b=1.0,a=1.0}
+	self.bg = {r=0.0,g=0.0,b=0.0,a=1.0}
+	self._handle = freen.graphic_handle(self._width, self._height)
 end
 
-Freen = {}
-
-function Freen:new()
-	local f = {}
-	setmetatable(f, self)
-	self.__index = self
-	table.insert(SCREEN_CACHE, f)
-	return f
-end
+local Freen = defineClass({
+	aliase = {"Freen", "Screen", "FINComputerScreen"},
+	displayName = "<3"
+}, function(p)
+	table.insert(SCREEN_CACHE, p)
+end)
 
 function Freen:handle(gpu)
 	if (self._handle == nil) then
@@ -201,8 +203,3 @@ end
 function toUID(uid)
 	return uid
 end
-
-defineClass(Freen, {
-	aliase = {"Freen", "Screen", "FINComputerScreen"},
-	displayName = "<3"
-})

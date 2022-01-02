@@ -37,19 +37,18 @@ impl TextGrid
 
 	pub fn draw(&mut self, device: &Device, encoder: &mut CommandEncoder, view: &TextureView, buffer: &Buffer)
 	{
-		let bounds = (self.size.window_width as f32, self.size.window_height as f32);
 		let cell_size = self.size.cell_size();
 
 		for i in 0..buffer.chars.len()
 		{
-			if buffer.chars[i].is_whitespace() { continue; }
+ 			if buffer.chars[i].is_whitespace() { continue; }
 			let x = ((i as u32 % buffer.width) * cell_size.width) as f32;
 			let y = ((i as u32 / buffer.width) * cell_size.height) as f32;
 			self.glyph_brush.queue(Section {
 				screen_position: (x, y),
-				bounds: bounds,
+				bounds: (cell_size.width as f32, cell_size.height as f32),
 				text: vec![Text::new(&buffer.chars[i].to_string()).with_color(buffer.foreground[i]).with_scale(self.size.font_size as f32)],
-				layout: Layout::default()
+				layout: Layout::default_single_line()
 			});
 		}
 

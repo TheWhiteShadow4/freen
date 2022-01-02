@@ -6,3 +6,4 @@ build/
 *.dll
 /drives/
 /lua/network.lua
+/test*/

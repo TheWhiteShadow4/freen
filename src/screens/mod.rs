@@ -318,8 +318,6 @@ impl Buffer
 		self.chars[idx] = char;
 		self.foreground[idx] = fg;
 		self.background[idx] = bg;
-
-		//println!("Buffer Write: {},{}", x, y);
 	}
 
 	/*pub fn get_cell(&self, x: u32, y: u32) -> BufferCell

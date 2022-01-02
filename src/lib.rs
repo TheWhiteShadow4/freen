@@ -82,7 +82,7 @@ impl EventHandler
 				}
 			}
 			None => {
-				let result = { self.recever.lock().unwrap().recv() };
+				let result = { self.recever.lock().unwrap().try_recv() };
 
 				match result {
 					Ok(v) => Ok(v),
@@ -128,7 +128,7 @@ unsafe fn handle<T>(h: *mut T) -> &'static mut T
 #[no_mangle]
 pub unsafe extern "C" fn new_event_handler() -> *const EventHandler
 {
-	env_logger::init();
+	env_logger::try_init().ok();
 	
 	let handler = EventHandler::new();
 	let boxed = Box::new(handler);
@@ -318,14 +318,21 @@ pub unsafe extern "C" fn buf_clone(ptr: *mut Buffer) -> *mut Buffer
 pub unsafe extern "C" fn buf_fill(ptr: *mut Buffer, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char, fg: Color, bg: Color)
 {
 	let char = CStr2Char(cstr);
-	handle(ptr).fill(x, y, w, h, char, fg, bg);
+	handle(ptr).fill(x, y, w, h, char, fg.clone(), bg.clone());
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn buf_write(ptr: *mut Buffer, x: i32, y: i32, cstr: *const c_char, fg: Color, bg: Color)
 {
 	let text = CStr::from_ptr(cstr).to_str().expect("Ungültige Zeichen");
-	handle(ptr).writeText(x, y, text, fg, bg);
+	handle(ptr).writeText(x, y, text, fg.clone(), bg.clone());
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn buf_set(ptr: *mut Buffer, x: i32, y: i32, cstr: *const c_char, fg: Color, bg: Color)
+{
+	let char = CStr2Char(cstr);
+	handle(ptr).write(x, y, char, fg.clone(), bg.clone());
 }
 
 #[no_mangle]

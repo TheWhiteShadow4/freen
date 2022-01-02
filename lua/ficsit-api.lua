@@ -4,46 +4,14 @@ ffi.cdef[[
 void Sleep(int ms);
 ]]
 
-function class(base, init)
-	local c = {}
-	if not init and type(base) == 'function' then
-		init = base
-		base = nil
-	elseif type(base) == 'table' then
-		for i,v in pairs(base) do c[i] = v end
-		c._base = base
-	end
-	c.__index = c
-	local mt = {}
-	mt.__call = function(class_tbl, ...)
-		local obj = {}
-		setmetatable(obj,c)
-		if init then
-			init(obj,...)
-		else 
-		if base and base.init then
-		base.init(obj, ...)
-		end
-	end
-		return obj
-	end
-	c.init = init
-	c.is_a = function(self, klass)
-		local m = getmetatable(self)
-		while m do 
-			if m == klass then return true end
-			m = m._base
-		end
-		return false
-	end
-	setmetatable(c, mt)
-	return c
-end
-
 local classes = {}
 
 function typeof(t, c)
 	return t ~= nil and t.__index == c
+end
+
+local function hash()
+	return math.random(1, 4294967295)
 end
 
 local Class = {
@@ -53,22 +21,43 @@ function Class:getType() return self end
 Class.__index = Class
 
 --- Definiert ein Klassen Objekt für einen Typen und fügt dieses zur Lookuptable hinzu.
---- Die Klasse muss ein Feld 'aliase' besitzen, indem eine Liste von Namen für die Lookuptable stehen.
---- Zudem können weitere Reflektion Felder wie internalName oder displayName angegeben werden.
-function defineClass(c, cls)
+function defineClass(spec, init)
+	local c = {}
+	local base = spec.base
+	if type(base) == 'table' then
+		for i,v in pairs(base) do c[i] = v end
+		c._base = base
+	end
+	c.__index = c
+	local cls = {}
 	setmetatable(cls, Class)
-	cls.instantiate = function()
-		local o = c.new and c:new() or {}
-		setmetatable(o, c)
-		c.__index = c
-		c.__tostring = function(self) return self.getType().name end
-		c.getType = function() return cls end
-		return o
+	-- Konstruktor setzen
+	c.init = init
+	cls.displayName = spec.displayName
+	-- Instanzierungs Funktion für neue Objekte
+	cls.instantiate = function(...)
+		local obj = {}
+		setmetatable(obj,c)
+		if base then
+			local parent = base
+			if parent and parent.init then
+				parent.init(obj, ...)
+			end
+		end
+		if c.init then c.init(obj,...) end
+		return obj
 	end
-	for _,n in pairs(cls.aliase) do
-		classes[n] = cls
+	-- Basis Funktionen jeder Klasse
+	c.hash = hash()
+	c.getHash = function() return c.hash end
+	c.getType = function() return cls end
+	if type(spec.aliase) == 'table' then
+		cls.name = spec.aliase[1]
+		-- in Lookup Tabelle eintragen
+		for _,n in pairs(spec.aliase) do
+			classes[n] = cls
+		end
 	end
-	cls.name = cls.aliase[1]
 	return c
 end
 
@@ -115,11 +104,11 @@ local function newUID()
 	return id
 end
 
-local Component = class(function(p)
+_Component = defineClass({}, function(p)
 	p.id = newUID()
 end)
 
-function Component:__tostring() return self.id end
+function _Component:__tostring() return self.id end
 
 --- Erstellt ein Array mit einer neuen virtuellen Netzwerk Komponente mit zufällig generierter Id.
 --- Die so erstellte Komponente wird dem Netzwerk hinzugefügt.
@@ -211,7 +200,7 @@ event = {
 	listening = function() return {} end,
 	ignore = function(c) end,
 	ignoreAll = function() end,
-	clear = function() end,
+	clear = function() EVENT_QUEUE = {} end,
 	pull = function(n)
 		if #EVENT_QUEUE > 0 then
 			return table.unpack(table.remove(EVENT_QUEUE))
@@ -246,11 +235,6 @@ local function findFile(name)
 	end
 	return nil
 end
-
-FileSystem = class(Component, function(p, device)
-	p.device = device
-	p.mounted = false
-end)
 
 filesystem = {
 	initFileSystem = function(path)
@@ -360,21 +344,17 @@ function GPUT1Buffer:new(o)
 	return o
 end
 
-FINComputerGPU = {
-	_width=120,
-	_height=40
-}
-
-function FINComputerGPU:new()
-	--print("FINComputerGPU:new()", dump(self, 1))
-	local o = {
-		screen=nil,
-		buffer=GPUT1Buffer:new({self._width, self._height}),
-		fg = {r=1.0,g=1.0,b=1.0,a=1.0},
-		bg = {r=0.0,g=0.0,b=0.0,a=1.0},
-	}
-	return o
-end
+FINComputerGPU = defineClass({
+	aliase = {"GPU_T1_C", "GPUT1"},
+	displayName = "Computer GPU T1"
+}, function(p)
+	p._width=120
+	p._height=40
+	p.screen=nil
+	p.buffer=GPUT1Buffer:new({p._width, p._height})
+	p.fg = {r=1.0,g=1.0,b=1.0,a=1.0}
+	p.bg = {r=0.0,g=0.0,b=0.0,a=1.0}
+end)
 
 function FINComputerGPU:bindScreen(screen)
 	self.screen = screen
@@ -413,17 +393,14 @@ function FINComputerGPU:flush() end
 function FINComputerGPU:fill(x, y, w, h, str) self.buffer:fill(x, y, w, h, str) end
 function FINComputerGPU:setText(x, y, str) self.buffer:setText(x, y, str) end
 
-defineClass(FINComputerGPU, {
-	aliase = {"GPU_T1_C", "GPUT1"},
-	displayName = "Computer GPU T1"
-})
-
-FINComputerScreen = defineClass({}, {
+FINComputerScreen = defineClass({
+	base = _Component,
 	aliase = {"Build_Screen_C", "Screen"},
 	displayName = "Large Screen"
 })
 
-Powerpol = defineClass({}, {
+Powerpol = defineClass({
+	base = _Component,
 	aliase = {"Build_PowerPoleMk1_C"}
 })
 

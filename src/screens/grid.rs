@@ -45,7 +45,7 @@ impl PixelGrid
 			mip_level_count: 1,
 			sample_count: 1,
 			dimension: wgpu::TextureDimension::D2,
-			format: wgpu::TextureFormat::Rgba8UnormSrgb,
+			format: wgpu::TextureFormat::Rgba8Unorm,
 			usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
 		});
 		(texture, extent)
@@ -56,12 +56,12 @@ struct GridRenderer
 {
 	size: ScreenSize,
 	pipeline: RenderPipeline,
+	uniform_buffer: wgpu::Buffer,
 	bind_group: wgpu::BindGroup,
 	vertex_buffer: wgpu::Buffer,
 	clip_rect: (u32, u32, u32, u32),
 	texture: wgpu::Texture,
-	texture_size: Extent3d,
-	uniform_buffer: wgpu::Buffer,
+	texture_size: Extent3d
 }
 
 impl GridRenderer
