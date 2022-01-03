@@ -2,8 +2,7 @@
 
 /node_modules/
 build/
-/test/
 *.dll
 /drives/
 /lua/network.lua
-/test*/
+/_test*/

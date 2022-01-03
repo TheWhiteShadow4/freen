@@ -76,7 +76,7 @@ function lazyArray(func, ...)
 	local args = {...}
 	setmetatable(a, {
 		__index = function(a, i)
-			if i > 0 then
+			if type(i) == "number" and i > 0 then
 				local obj = func(table.unpack(args))
 				a[i] = obj
 				return obj
@@ -112,31 +112,29 @@ function _Component:__tostring() return self.id end
 
 --- Erstellt ein Array mit einer neuen virtuellen Netzwerk Komponente mit zufällig generierter Id.
 --- Die so erstellte Komponente wird dem Netzwerk hinzugefügt.
-function createComponentIds(query, nick)
-	local id = newUID()
+function componentFactory(query, nick)
 	-- Komponente erstellen und ins Netzwerk einfügen.
 	local comp
 	if getmetatable(query) == Class then
 		comp = query:instantiate()
 	else
-		comp = {}
+		comp = _Component.getType().instantiate()
 	end
 	for i,v in pairs(Actor) do
 		comp[i] = v
 	end
-	comp.id = id
 	comp.nick = nick
 	
-	Network[id] = comp
+	Network[comp.id] = comp
 	if nick ~= nil then
 		if ALIASES[nick] == nil then ALIASES[nick] = {} end
 		table.insert(ALIASES[nick], comp)
 	end
-	return {id}
+	return comp.id
 end
 
 computer = {
-	getInstance = function() end,
+	--getInstance = function() end,
 	beep = function(pitch) end,
 	stop = function() os.exit() end,
 	panic = function(error)
@@ -171,7 +169,7 @@ component = {
 		end
 	end,
 	findComponent = function(query)
-		if query == nil then return {nil} end
+		if query == nil then return {} end
 		
 		if Network[query] ~= nil then
 			return Network[query].id
@@ -184,19 +182,25 @@ component = {
 		elseif query == "" then
 			return table_keys(Network)
 		else
-			return lazyArray(createComponentIds, query, nil)
+			return lazyArray(componentFactory, query, nil)
 		end
 	end
 }
 
 local EVENT_QUEUE = {}
 
-function queueEvent(type, comp, ...)
-	table.insert(EVENT_QUEUE, {type, comp, ...})
+function queueEvent(evt, comp, ...)
+	table.insert(EVENT_QUEUE, {evt, comp, ...})
 end
 
 event = {
-	listen = function(c) end,
+	listen = function(comp)
+		if comp._fire ~= nil then
+			comp._fire = function(c, evt, ...)
+				queueEvent(evt, c, ...)
+			end
+		end
+	end,
 	listening = function() return {} end,
 	ignore = function(c) end,
 	ignoreAll = function() end,
@@ -351,7 +355,7 @@ FINComputerGPU = defineClass({
 	p._width=120
 	p._height=40
 	p.screen=nil
-	p.buffer=GPUT1Buffer:new({p._width, p._height})
+	p.buffer=GPUT1Buffer:new({width=p._width, height=p._height})
 	p.fg = {r=1.0,g=1.0,b=1.0,a=1.0}
 	p.bg = {r=0.0,g=0.0,b=0.0,a=1.0}
 end)
