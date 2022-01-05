@@ -1,5 +1,5 @@
 
-use crate::{EventEmitter, component::{UID, Component, generateUID}, Event};
+use crate::*;
 use super::{Buffer, Color, ScreenSize};
 use super::renderer::Renderer;
 
@@ -15,13 +15,6 @@ use winit::{
 };
 use winit::event::{WindowEvent, ElementState, MouseButton};
 
-const EVENT_WINDOW_CLOSED: &str = "WindowClosed\0";
-const EVENT_MOUSE_DOWN: &str = "OnMouseDown\0";
-const EVENT_MOUSE_UP: &str = "OnMouseUp\0";
-const EVENT_MOUSE_MOVE: &str = "OnMouseMove\0";
-const EVENT_KEY_DOWN: &str = "OnKeyDown\0";
-const EVENT_KEY_UP: &str = "OnKeyUp\0";
-
 pub struct ScreenComponent
 {
 	id: UID,
@@ -34,10 +27,8 @@ pub struct ScreenComponent
 
 impl ScreenComponent
 {
-	pub fn new(width: u32, height: u32, font_size: u32, ) -> Self
+	pub fn new(font_size: u32, ) -> Self
 	{
-		assert!(width > 0);
-		assert!(height > 0);
 		Self
 		{
 			id: generateUID(),
@@ -196,9 +187,9 @@ impl Component for ScreenComponent
 {
 	fn uid(&self) -> UID { self.id }
 
-	fn listen(&mut self, _emitter: Option<EventEmitter>)
+	fn listen(&mut self, emitter: Option<EventEmitter>)
 	{
-		todo!()
+		self.emitter = emitter;
     }
 }
 
@@ -247,24 +238,24 @@ impl InputHelper
 				button,
 				..
 			} => {
-				em.send(Event {
-					eventType: EVENT_MOUSE_DOWN.to_string(),
-					component: em.owner(),
-					arg1: self.mouseX,
-					arg2: self.mouseY,
-					arg3: mouse_button_to_int(button)});
+				em.send(Event::new(
+					EVENT_MOUSE_DOWN,
+					em.owner(),
+					self.mouseX,
+					self.mouseY,
+					mouse_button_to_int(button), 0));
 			},
 			WindowEvent::MouseInput {
 				state: ElementState::Released,
 				button,
 				..
 			} => {
-				em.send(Event {
-					eventType: EVENT_MOUSE_UP.to_string(),
-					component: em.owner(),
-					arg1: self.mouseX,
-					arg2: self.mouseY,
-					arg3: mouse_button_to_int(button)});
+				em.send(Event::new(
+					EVENT_MOUSE_UP,
+					em.owner(),
+					self.mouseX,
+					self.mouseY,
+					mouse_button_to_int(button), 0));
 			},
 			WindowEvent::CursorMoved {
 				position,
@@ -275,12 +266,12 @@ impl InputHelper
 				if mouseX == self.mouseX && mouseY == self.mouseY {return;}
 				self.mouseX = mouseX;
 				self.mouseY = mouseY;
-				em.send(Event {
-						eventType: EVENT_MOUSE_MOVE.to_string(),
-						component: em.owner(),
-						arg1: self.mouseX,
-						arg2: self.mouseY,
-						arg3: 0});
+				em.send(Event::new(
+						EVENT_MOUSE_MOVE,
+						em.owner(),
+						self.mouseX,
+						self.mouseY,
+						0, 0));
 			},
 			WindowEvent::KeyboardInput {
 				input,
@@ -290,13 +281,13 @@ impl InputHelper
 				{
         			ElementState::Pressed => EVENT_KEY_DOWN,
         			ElementState::Released => EVENT_KEY_UP,
-    			}.to_string();
+    			};
 				let key = match input.virtual_keycode
 				{
 					Some(k) => k as i32,
 					None => 0
 				};
-				em.send(Event { eventType, component: em.owner(), arg1: input.scancode as i32, arg2: key, arg3: self.modifiers });
+				em.send(Event::new(eventType, em.owner(), input.scancode as i32, key, self.modifiers, 0));
 			},
 			WindowEvent::ModifiersChanged(modifiers) => {
 				let mut bits = 0i32;
@@ -310,11 +301,7 @@ impl InputHelper
 			},
 			WindowEvent::CloseRequested => {
 				self.close = true;
-				em.send(Event {
-					eventType: EVENT_WINDOW_CLOSED.to_string(),
-					component: em.owner(),
-					arg1: 0, arg2: 0, arg3: 0
-				});
+				em.send(Event::noArgs(EVENT_WINDOW_CLOSED, em.owner()));
 			},
 			_ => {}
 		}

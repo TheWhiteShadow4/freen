@@ -1,10 +1,25 @@
-use rand::Rng;
+use rand::distributions::{Distribution, Uniform};
 
 use crate::{EventEmitter, Event};
 
-pub type UID = u64;
+pub type UID = [u8; 16];
 
-pub static EMPTY_UID: UID = 0;
+//pub static EMPTY_UID: UID = 0;
+
+#[repr(C)]
+pub struct UIDHandle<T>
+{
+	pub id: UID,
+	pub handle: *mut T,
+}
+
+impl<T: Component> UIDHandle<T>
+{
+	pub fn new(val: T) -> Self
+	{
+		Self{ id: val.uid(), handle: Box::into_raw(Box::new(val)) }
+	}
+}
 
 pub trait Component
 {
@@ -21,10 +36,10 @@ pub struct GenericComponent
 impl GenericComponent
 {
 	#![allow(dead_code)]
-	pub fn fire_event(&mut self, eventType: String, arg1: i32, arg2: i32, arg3: i32)
+	pub fn fire_event(&mut self, eventType: &'static str, arg1: i32, arg2: i32, arg3: i32, arg4: usize)
 	{
 		if self.emitter.is_none() {return;}
-		self.emitter.as_mut().unwrap().send(Event{eventType, component: self.id, arg1, arg2, arg3});
+		self.emitter.as_mut().unwrap().send(Event::new(eventType, self.id, arg1, arg2, arg3, arg4));
 	}
 }
 
@@ -41,17 +56,19 @@ impl Component for GenericComponent
     }
 }
 
+const HEX_DIGITS: *const u8 = "0123456789ABCDEF".as_ptr();
 pub fn generateUID() -> UID
 {
 	let mut rng = rand::thread_rng();
-	//let n = rng.gen::<u64>();
-	//let ptr: usize = unsafe { std::mem::transmute(n) };
-	//CStr::from_ptr(ptr);
+	let hex: Uniform<isize> = Uniform::from(1..16);
 
-	
-	//println!("Magic {}", ptr);
-
-	//std::mem::forget(*n);
-	//let ptr = *n;  //[rng.gen(), rng.gen(), rng.gen(), rng.gen()]
-	rng.gen::<u64>()
+	let mut id = [0; 16];
+	unsafe
+	{
+		for i in 0..16
+		{
+			id[i] = *HEX_DIGITS.offset(hex.sample(&mut rng)) as u8;
+		}
+	}
+	id
 }

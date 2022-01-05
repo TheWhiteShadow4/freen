@@ -3,29 +3,30 @@
 mod component;
 use crate::component::*;
 
+mod network;
+use crate::network::*;
+
 mod screens;
 use crate::screens::*;
 use screens::screen::*;
 
+use core::panic;
 use core::time;
 use std::error::Error;
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use std::slice;
 use std::sync::mpsc;
 use std::time::Duration;
-use std::ptr;
 use std::sync::{Arc, Mutex};
 
-
-#[derive(Debug, Default)]
-pub struct Event
-{
-	pub eventType: String,
-	pub component: UID,
-	pub arg1: i32,
-	pub arg2: i32,
-	pub arg3: i32
-}
+const EVENT_NETWORK_MESSAGE: &str = "NetworkMessage\0";
+const EVENT_WINDOW_CLOSED: &str = "WindowClosed\0";
+const EVENT_MOUSE_DOWN: &str = "OnMouseDown\0";
+const EVENT_MOUSE_UP: &str = "OnMouseUp\0";
+const EVENT_MOUSE_MOVE: &str = "OnMouseMove\0";
+const EVENT_KEY_DOWN: &str = "OnKeyDown\0";
+const EVENT_KEY_UP: &str = "OnKeyUp\0";
 
 pub struct EventEmitter
 {
@@ -50,6 +51,7 @@ pub struct EventHandler
 {
 	sender: Arc<Mutex<mpsc::Sender<Event>>>,
 	recever: Arc<Mutex<mpsc::Receiver<Event>>>,
+	extra_data: Option<Box<[u8; 1<<16]>>
 }
 
 impl EventHandler
@@ -60,7 +62,8 @@ impl EventHandler
 		Self
 		{
 			sender: Arc::new( Mutex::new(sender)),
-			recever: Arc::new( Mutex::new(recever))
+			recever: Arc::new( Mutex::new(recever)),
+			extra_data: None
 		}
 	}
 
@@ -93,28 +96,53 @@ impl EventHandler
 	}
 }
 
+pub type EventExtra = [u8; 1<<16];
+
 #[repr(C)]
-pub struct ExtEvent
+#[derive(Default)]
+pub struct Event
 {
-	pub eventType: *const u8,
+	pub eventType: usize,
 	pub component: UID,
 	pub arg1: i32,
 	pub arg2: i32,
-	pub arg3: i32
+	pub arg3: i32,
+	pub extra: usize
 }
 
-impl ExtEvent
+impl Event
 {
-	pub fn empty() -> Self
+	pub fn new(eventType: &'static str, comp: UID, arg1: i32, arg2: i32, arg3: i32, extra: usize) -> Self
 	{
 		Self
 		{
-			eventType: ptr::null(),
-			component: EMPTY_UID,
+			eventType: eventType.as_ptr() as usize,
+			component: comp,
+			arg1,
+			arg2,
+			arg3,
+			extra
+		}
+	}
+
+	pub fn noArgs(eventType: &'static str, comp: UID) -> Self
+	{
+		Self
+		{
+			eventType: eventType.as_ptr() as usize,
+			component: comp,
 			arg1: 0,
 			arg2: 0,
-			arg3: 0
+			arg3: 0,
+			extra: 0
 		}
+	}
+
+	pub fn name(&self) -> &'static str
+	{
+		if self.eventType == 0 { panic!("invalid event!") }
+		let ptr = self.eventType as *const &str;
+		unsafe { ptr.read() }
 	}
 }
 
@@ -124,6 +152,17 @@ unsafe fn handle<T>(h: *mut T) -> &'static mut T
 	assert!(!h.is_null(), "handle is null");
 	&mut *h
 }
+
+unsafe fn CStr2Char(cstr: *const c_char) -> char
+{
+	let str = CStr::from_ptr(cstr).to_str().expect("Ungültiges Zeichen");
+	str.chars().nth(0).expect("Ungültiges Zeichen")
+}
+
+/*unsafe fn convertData(ImageDataLayout: *const u8) -> [u8]
+{
+	return [u8; 1]
+}*/
 
 #[no_mangle]
 pub unsafe extern "C" fn new_event_handler() -> *const EventHandler
@@ -144,45 +183,44 @@ pub unsafe extern "C" fn start_listen(hptr: *mut EventHandler, sptr: *mut Screen
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn pull(ptr: *mut EventHandler, t: f32) -> ExtEvent
+pub unsafe extern "C" fn pull(ptr: *mut EventHandler, t: f32) -> Event
 {
 	let timeout = if t > 0.0 { Some(time::Duration::from_millis((t * 1000.0) as u64))} else {None};
 	
-	match handle(ptr).poll(timeout)
+	let handler = handle(ptr);
+	match handler.poll(timeout)
 	{
 		Ok(evt) => {
-			return ExtEvent{
-				eventType: evt.eventType.as_ptr(),
-				component: evt.component,
-				arg1: evt.arg1,
-				arg2: evt.arg2,
-				arg3: evt.arg3,
-			};
+			if evt.extra != 0
+			{
+				handler.extra_data = Some(Box::from_raw(evt.extra as *mut EventExtra));
+			}
+			return evt;
 		}
 
 		Err(e) => {
 			eprintln!("Event Error {}", e);
-			return ExtEvent::empty();
+			return Event::default();
 		}
 	}
 }
 
 #[no_mangle]
-pub extern "C" fn create(width: u32, height: u32, fontsize: u32, handler: *mut EventHandler) -> *mut ScreenComponent
+pub extern "C" fn create_screen(fontsize: u32, handler: *mut EventHandler) -> UIDHandle<ScreenComponent>
 {
-	let mut screen = ScreenComponent::new(width, height, fontsize);
+	let mut screen = ScreenComponent::new(fontsize);
 	unsafe
 	{
 		if handler.is_null()
 		{
-			screen.set_emitter(None);
+			screen.listen(None);
 		}
 		else
 		{
-			screen.set_emitter(Some((*handler).new_emitter(screen.uid())));
+			screen.listen(Some((*handler).new_emitter(screen.uid())));
 		}
 	}
-    Box::into_raw(Box::new(screen))
+	UIDHandle::new(screen)
 }
 
 #[no_mangle]
@@ -350,8 +388,53 @@ pub unsafe extern "C" fn buf_get(ptr: *mut Buffer, x: u32, y: u32) -> BufferCell
 	}
 }
 
-unsafe fn CStr2Char(cstr: *const c_char) -> char
+#[no_mangle]
+pub extern "C" fn create_network(port_start: u16, handler: *mut EventHandler) -> UIDHandle<NetworkComponent>
 {
-	let str = CStr::from_ptr(cstr).to_str().expect("Ungültiges Zeichen");
-	str.chars().nth(0).expect("Ungültiges Zeichen")
+	let mut network = NetworkComponent::new(port_start);
+	unsafe
+	{
+		if handler.is_null()
+		{
+			network.listen(None);
+		}
+		else
+		{
+			network.listen(Some((*handler).new_emitter(network.uid())));
+		}
+	}
+	UIDHandle::new(network)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn open_port(ptr: *mut NetworkComponent, port: u16) -> bool
+{
+	handle(ptr).open_port(port)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn close_port(ptr: *mut NetworkComponent, port: u16)
+{
+	handle(ptr).close_port(port);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn close_all_ports(ptr: *mut NetworkComponent)
+{
+	handle(ptr).close_all();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn send_message(ptr: *mut NetworkComponent, reciever: *const c_char, port: u16, data: *const u8, len: usize)
+{
+	let reciever_str = CStr::from_ptr(reciever).to_str().expect("Ungültige Zeichen");
+	let buf = slice::from_raw_parts(data, len);
+	handle(ptr).send(reciever_str, port, buf);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn broadcast_message(ptr: *mut NetworkComponent, port: u16, data: *const u8, len: usize)
+{
+	let buf = slice::from_raw_parts(data, len);
+	handle(ptr).broadcast(port, buf);
 }

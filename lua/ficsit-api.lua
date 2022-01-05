@@ -4,7 +4,10 @@ ffi.cdef[[
 void Sleep(int ms);
 ]]
 
+-- Lookup Tables
 local classes = {}
+local structs = {}
+local items = {}
 
 function typeof(t, c)
 	return t ~= nil and t.__index == c
@@ -61,6 +64,14 @@ function defineClass(spec, init)
 	return c
 end
 
+function defineStruct(name, struct)
+	structs[name] = struct
+end
+
+function defineItem(name, item)
+	items[name] = item
+end
+
 local table_keys = function(t)
 	local keys={}
 	local n=0
@@ -92,12 +103,27 @@ function findClass(str)
 	return classes[str]
 end
 
+function findStruct(str)
+	return structs[str]
+end
+
+function findItem(str)
+	return items[str]
+end
+
 Network = Network or {}
 ALIASES = {}
 
+function addNetworkComponent(comp)
+	if comp == nil then error("componment is nil") end
+	if Network[comp.id] == nil then
+		Network[comp.id] = comp
+	end
+end
+
 local function newUID()
 	local id = ""
-	for i = 1,32 do
+	for i = 1,16 do
 		r = math.random(0, 15)
 		id = id..(r > 9 and string.char(r + 55) or r)
 	end
