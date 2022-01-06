@@ -213,6 +213,7 @@ component = {
 	end
 }
 
+local LISTENING = {}
 local EVENT_QUEUE = {}
 
 function queueEvent(evt, comp, ...)
@@ -221,16 +222,35 @@ end
 
 event = {
 	listen = function(comp)
-		if comp._fire ~= nil then
-			comp._fire = function(c, evt, ...)
-				queueEvent(evt, c, ...)
-			end
+		if comp.id == nil then error("Invalid component") end
+		comp._fire = function(c, evt, ...)
+			queueEvent(evt, c, ...)
+		end
+		LISTENING[comp.id] = comp
+	end,
+	
+	listening = function()
+		l = {}
+		for _,c in pairs(LISTENING) do
+			table.insert(l, c)
+		end
+		return l
+	end,
+	
+	ignore = function(comp)
+		if comp.id == nil then error("Invalid component") end
+		LISTENING[comp.id]._fire = nil
+		LISTENING[comp.id] = nil
+	end,
+	
+	ignoreAll = function()
+		for _,c in pairs(LISTENING) do
+			event.ignore(c)
 		end
 	end,
-	listening = function() return {} end,
-	ignore = function(c) end,
-	ignoreAll = function() end,
+	
 	clear = function() EVENT_QUEUE = {} end,
+	
 	pull = function(n)
 		if #EVENT_QUEUE > 0 then
 			return table.unpack(table.remove(EVENT_QUEUE))
