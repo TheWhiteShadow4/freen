@@ -103,8 +103,6 @@ end
 
 function Test_FIN_API:TestEvents()
 	local comp = component.proxy(component.findComponent("Blub")[1])
-	-- Wir brauchen zunächst ein Dummy
-	comp._fire = function() end
 	-- Wir überschreiben den Dummy mit dem Event Handler
 	event.listen(comp)
 	-- Event manuell auslösen
@@ -117,6 +115,11 @@ function Test_FIN_API:TestEvents()
 	-- Der zweite Aufruf gib nil zurück.
 	e,c,a = event.pull()
 	lu.assertNil(e)
+	-- Ignorierte komponenten feuern nicht.
+	event.ignore(comp)
+	comp:_fire("test", 42)
+	e,c,a = event.pull()
+	lu.assertEquals(e, nil)
 end
 
 function Test_FIN_API:TestFilesystem()

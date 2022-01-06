@@ -239,7 +239,8 @@ event = {
 	
 	ignore = function(comp)
 		if comp.id == nil then error("Invalid component") end
-		LISTENING[comp.id]._fire = nil
+		-- Leere Funktion statt nil ist stabiler.
+		LISTENING[comp.id]._fire = function() end
 		LISTENING[comp.id] = nil
 	end,
 	
