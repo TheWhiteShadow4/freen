@@ -335,7 +335,8 @@ impl Buffer
 #[repr(C)]
 pub struct BufferCell
 {
-	pub char: *mut String,
+	pub char: [u8; 4],
+	pub len: usize,
 	pub fg: Color,
 	pub bg: Color,
 }

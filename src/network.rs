@@ -51,14 +51,14 @@ impl NetworkComponent
 					{
 						match listener.socket.recv_from(&mut buf)
 						{
-							Ok((bytes, addr)) => {
-								println!("Empfange {} bytes von {}", bytes, addr.port());
+							Ok((bytes, _addr)) => {
+								//println!("Empfange {} bytes von {}", bytes, addr.port());
 								let mut lock = emitter.lock().unwrap();
 								let e = lock.as_mut().unwrap();
 								let ptr = Box::into_raw(Box::new(buf)) as usize;
 								e.send(Event::new(EVENT_NETWORK_MESSAGE, e.owner(), port.into(), 0, bytes.try_into().unwrap(), ptr));
 							},
-							Err(_e) => {}
+							Err(e) => { eprintln!("{}", e); }
 						}
 					}
 				});
@@ -91,7 +91,7 @@ impl NetworkComponent
 
 	pub fn send(&mut self, _reciever: &str, port: u16, buf: &[u8])
 	{
-		println!("Sende zu {}", port);
+		//println!("Sende zu {}", port);
 
 		if self.sender_socket.is_none()
 		{
@@ -105,9 +105,7 @@ impl NetworkComponent
 			let result = socket.send_to(buf, addr);
 			match result
 			{
-				Ok(len) => {
-					println!("Gesendet {}", len);
-				},
+				Ok(_len) => {},
 				Err(e) => eprintln!("{:?}", e)
 			}
 		}

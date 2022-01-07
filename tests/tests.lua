@@ -1,7 +1,7 @@
 
 require 'ficsit-api'
 require 'utils_0-1'
---require 'freen'
+require 'freen'
 
 lu = require 'tests/luaunit'
 
@@ -98,7 +98,35 @@ function Test_FIN_API:TestGPU()
 	lu.assertEquals(bw, 100)
 	-- Large Screen
 	cls = findClass("Screen")
-	lu.assertEquals(cls.name, "Build_Screen_C")
+	lu.assertEquals(cls.name, "Freen") -- Ohne Freen: Build_Screen_C
+end
+
+function Test_FIN_API:TestGPU2()
+	local gpu = computer.getPCIDevices(findClass("GPUT1"))[1]
+	local screen = computer.getPCIDevices(findClass("Screen"))[1]
+	gpu:bindScreen(screen)
+	local w,h = gpu:getSize()
+
+	-- Aufgrund der asynchroner Initialisierung des Fensters kann es sein,
+	-- dass der Buffer schon vor flush gelesen wird.
+	-- Dieses Fall ist normalerweise tollerierbar.
+	gpu:fill(0, 0, w, h, ' ')
+	gpu:setForeground(1, 0.5, 0, 1)
+	gpu:setText(0, 0, "♥Hallo♥")
+	gpu:flush()
+	event.pull(0.5)
+	
+	local buffer = gpu:getBuffer()
+	local t,f,b = buffer:get(0, 0)
+	lu.assertEquals(t, "♥")
+	lu.assertEquals(f.r, 1)
+	lu.assertEquals(f.g, 0.5)
+	lu.assertEquals(f.b, 0)
+	buffer:set(0, 0, "♦", 1, 0)
+	gpu:setBuffer(buffer)
+	gpu:flush()
+	event.pull(0.1)
+	--screen:close()
 end
 
 function Test_FIN_API:TestEvents()
@@ -123,7 +151,26 @@ function Test_FIN_API:TestEvents()
 end
 
 function Test_FIN_API:TestFilesystem()
-	
+	lu.assertError(filesystem.initFileSystem, "")
+end
+
+function Test_FIN_API:TestNetwork()
+	local card = component.proxy(component.findComponent("NetworkCard")[1])
+	local port = 1
+	card:open(port)
+	-- Reciever muss angegeben werden.
+	lu.assertError(card.send, nil, port, "Hallo 1")
+	-- Port darf nicht negativ sein.
+	lu.assertError(card.send, "", -1, "Hallo 1")
+	card:send("", port, "Hallo 2")
+	local e,c,r,p,m = event.pull(0.1)
+	lu.assertEquals(e, "NetworkMessage")
+	lu.assertEquals(c, card)
+	-- TODO: Bisher wird der Absender noch nicht mitgesendet.
+	lu.assertNotNil(r)
+	lu.assertEquals(p, port)
+	lu.assertEquals(m, "Hallo 2")
+	card:close(port)
 end
 
 local runner = lu.LuaUnit.new()

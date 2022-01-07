@@ -143,6 +143,8 @@ function componentFactory(query, nick)
 	local comp
 	if getmetatable(query) == Class then
 		comp = query:instantiate()
+	elseif classes[query] ~= nil then
+		comp = classes[query].instantiate()
 	else
 		comp = _Component.getType().instantiate()
 	end
@@ -171,7 +173,7 @@ computer = {
 	skip = function() end,
 	getEEPROM = function() end,
 	setEEPROM = function(code) end,
-	time = function() end,
+	time = function() return 0 end,
 	millis = function() return os.clock() end,
 	getPCIDevices = function(type)
 		if type == nil then return {} end
@@ -271,7 +273,7 @@ local function startsWith(str, c)
 end
 
 local function stripPath(path)
-	if path == "/" then return path end
+	if path == "" or path == "/" then return "/" end
 	path = string.gsub(path..'/', '/+$', '/')
 	path = string.gsub(path, '^/+', '')
 	return path

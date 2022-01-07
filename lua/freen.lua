@@ -2,16 +2,16 @@ ffi = require("ffi")
 
 ffi.cdef[[
 typedef struct { const char id[16]; uintptr_t h; } uid_handle;
-typedef struct { float red, green, blue, alpha; } color;
+typedef struct { float r, g, b, a; } color;
 typedef struct { uint32_t width, height; } size;
-typedef struct { const char *ch; color fg, bg; } cell;
+typedef struct { const char ch[4]; size_t l; color fg, bg; } cell;
 typedef struct { const char *e; const char c[16]; int32_t a1; int32_t a2; int32_t a3; const char *x; } event;
 uintptr_t new_event_handler();
 uintptr_t graphic_handle(uint32_t w, uint32_t h);
 void bind_screen(uintptr_t g, uintptr_t s);
 event pull(uintptr_t g, float t);
 uid_handle create_screen(uint32_t f, uintptr_t h);
-void destroy(uintptr_t s);
+void destroy_screen(uintptr_t s);
 void set_size(uintptr_t g, uint32_t width, uint32_t height);
 void set_location(uintptr_t s, int32_t x, int32_t y);
 void foreground(uintptr_t g, color c);
@@ -34,7 +34,7 @@ uid_handle create_network(uint16_t i, uintptr_t h);
 bool open_port(uintptr_t n, uint16_t p);
 void close_port(uintptr_t n, uint16_t p);
 void close_all_ports(uintptr_t n);
-void send_message(uintptr_t n, const char *ch, uint16_t p, const char *ch, uint32_t len);
+void send_message(uintptr_t n, const char *ch, uint16_t p, const char *ch, size_t len);
 void broadcast_message(uintptr_t n, uint16_t p, const char *ch, uint32_t len);
 ]]
 local libDir = debug.getinfo(1).source:match("@?(.*/)")
@@ -56,9 +56,9 @@ end
 
 local org_event_pull = event.pull
 event.pull = function(n)
-	evt = org_event_pull()
-	if (evt ~= nil) then
-		return evt
+	local evt = {org_event_pull()}
+	if (evt[1] ~= nil) then
+		return unpack(evt)
 	end
 	n = n or 0.0
 	evt = freen.pull(eventHandler, n)
@@ -67,11 +67,11 @@ event.pull = function(n)
 	else
 		local comp = nil
 		if evt.c ~= nil then
-			comp = component.proxy(ffi.string(evt.c, 16))
+			comp = component.proxy(__parseUID(evt.c))
 		end
 		if evt.x ~= nil then
 			local data = ffi.string(evt.x, evt.a3)
-			return ffi.string(evt.e), comp, evt.a1, data
+			return ffi.string(evt.e), comp, "", evt.a1, data
 		else
 			return ffi.string(evt.e), comp, evt.a1, evt.a2, evt.a3
 		end
@@ -177,7 +177,7 @@ end
 function GPUT1Buffer:get(x, y, buffer)
 	local cell = freen.buf_get(self._handle, x, y)
 	if cell == nil then return nil end
-	return tostring(cell.ch), cell.fg, cell.bg
+	return ffi.string(cell.ch, cell.l), cell.fg, cell.bg
 end
 
 function GPUT1Buffer:setRaw(x, y, c, fg, bg)
@@ -200,18 +200,18 @@ function FINComputerGPU:init()
 end
 
 local Freen = defineClass({
-	aliase = {"Freen", "Screen", "FINComputerScreen"},
-	displayName = "<3"
+	aliase = {"Freen", "Screen", "Build_Screen_C", "FINComputerScreen"},
+	displayName = "Freen Window"
 }, function(p)
 	local c = freen.create_screen(FREEN.fontsize, eventHandler)
-	p.id = ffi.string(c.id, 16)
+	p.id = __parseUID(c.id) -- ffi.string(c.id, 16)
 	p._handle = c.h
 	table.insert(SCREEN_CACHE, p)
 end)
 
 function Freen:close()
 	if (self._handle ~= nil) then
-		freen.close(self._handle)
+		freen.destroy_screen(self._handle)
 		self._handle = nil
 		
 		for idx,s in pairs(SCREEN_CACHE) do
@@ -247,6 +247,7 @@ function NetworkCard:closeAll()
 end
 
 function NetworkCard:send(rec, port, msg)
+	if rec == nil then error("reciever is nil") end
 	freen.send_message(self._handle, rec, port, msg, #msg)
 end
 
