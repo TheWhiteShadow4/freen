@@ -77,7 +77,7 @@ Die Kommentare `--$DEV-ONLY$` kennzeichen die Zeilen als nur für die Entwicklun
 
 Freen kann über das globale Objekt FREEN konfiguriert werden.
 
-- fontsize: Schriftgröße für Freen Fenter.
+- fontsize: Schriftgröße für Freen Fenster.
 - portStart: Port Mapping Offset bei Netzwerkkarten.
 
 ## Unterschiede zu FIN

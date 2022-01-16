@@ -3,6 +3,12 @@
 mod component;
 use crate::component::*;
 
+mod events;
+use crate::events::*;
+
+mod files;
+use crate::files::Filesystem;
+
 mod network;
 use crate::network::*;
 
@@ -10,140 +16,22 @@ mod screens;
 use crate::screens::*;
 use screens::screen::*;
 
-use core::panic;
 use core::time;
-use std::error::Error;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::slice;
-use std::sync::mpsc;
-use std::time::Duration;
-use std::sync::{Arc, Mutex};
 
-const EVENT_NETWORK_MESSAGE: &str = "NetworkMessage\0";
-const EVENT_WINDOW_CLOSED: &str = "WindowClosed\0";
-const EVENT_MOUSE_DOWN: &str = "OnMouseDown\0";
-const EVENT_MOUSE_UP: &str = "OnMouseUp\0";
-const EVENT_MOUSE_MOVE: &str = "OnMouseMove\0";
-const EVENT_KEY_DOWN: &str = "OnKeyDown\0";
-const EVENT_KEY_UP: &str = "OnKeyUp\0";
 
-pub struct EventEmitter
+unsafe fn param_to_vec(data: *const C_Param, len: usize) -> Vec<String>
 {
-	sender: Arc<Mutex<mpsc::Sender<Event>>>,
-	owner: UID
-}
-
-impl EventEmitter
-{
-	fn send(&mut self, event: Event)
+	let mut vec = Vec::<String>::with_capacity(len);
+	let mut ptr = data;
+	for _i in 0..len
 	{
-		if let Err(e) = self.sender.lock().unwrap().send(event)
-		{
-			eprintln!("Event Error {}", e);
-		}
+		let slice = ptr.read();
+		ptr = ptr.offset(1);
+		vec.push(slice.to_string());
 	}
-
-	fn owner(&self) -> UID { self.owner }
-}
-
-pub struct EventHandler
-{
-	sender: Arc<Mutex<mpsc::Sender<Event>>>,
-	recever: Arc<Mutex<mpsc::Receiver<Event>>>,
-	extra_data: Option<Box<[u8; 1<<16]>>
-}
-
-impl EventHandler
-{
-	fn new() -> Self
-	{
-		let (sender, recever) = mpsc::channel();
-		Self
-		{
-			sender: Arc::new( Mutex::new(sender)),
-			recever: Arc::new( Mutex::new(recever)),
-			extra_data: None
-		}
-	}
-
-	fn new_emitter(&self, owner: UID) -> EventEmitter
-	{
-		EventEmitter{sender: self.sender.clone(), owner}
-	}
-
-	fn poll(&mut self, timeout: Option<Duration>) -> Result<Event, Box<dyn Error + Send>>
-	{
-		match timeout
-		{
-			Some(duration) => {
-				let result = self.recever.lock().unwrap().recv_timeout(duration);
-
-				match result {
-					Ok(v) => Ok(v),
-					_ => Ok(Default::default()),
-				}
-			}
-			None => {
-				let result = { self.recever.lock().unwrap().try_recv() };
-
-				match result {
-					Ok(v) => Ok(v),
-					Err(e) => Err(Box::new(e)),
-				}	
-			}
-		}
-	}
-}
-
-pub type EventExtra = [u8; 1<<16];
-
-#[repr(C)]
-#[derive(Default)]
-pub struct Event
-{
-	pub eventType: usize,
-	pub component: UID,
-	pub arg1: i32,
-	pub arg2: i32,
-	pub arg3: i32,
-	pub extra: usize
-}
-
-impl Event
-{
-	pub fn new(eventType: &'static str, comp: UID, arg1: i32, arg2: i32, arg3: i32, extra: usize) -> Self
-	{
-		Self
-		{
-			eventType: eventType.as_ptr() as usize,
-			component: comp,
-			arg1,
-			arg2,
-			arg3,
-			extra
-		}
-	}
-
-	pub fn noArgs(eventType: &'static str, comp: UID) -> Self
-	{
-		Self
-		{
-			eventType: eventType.as_ptr() as usize,
-			component: comp,
-			arg1: 0,
-			arg2: 0,
-			arg3: 0,
-			extra: 0
-		}
-	}
-
-	pub fn name(&self) -> &'static str
-	{
-		if self.eventType == 0 { panic!("invalid event!") }
-		let ptr = self.eventType as *const &str;
-		unsafe { ptr.read() }
-	}
+	vec
 }
 
 #[inline]
@@ -153,25 +41,81 @@ unsafe fn handle<T>(h: *mut T) -> &'static mut T
 	&mut *h
 }
 
-unsafe fn CStr2Char(cstr: *const c_char) -> char
+#[inline]
+unsafe fn c2str(cstr: *const c_char) -> &'static str
 {
-	let str = CStr::from_ptr(cstr).to_str().expect("Ungültiges Zeichen");
-	str.chars().nth(0).expect("Ungültiges Zeichen")
+	if cstr.is_null() { panic!("null pointer!"); }
+	CStr::from_ptr(cstr).to_str().expect("Ungültiges Zeichen")
 }
 
-/*unsafe fn convertData(ImageDataLayout: *const u8) -> [u8]
+#[inline]
+unsafe fn c2char(ch: *const c_char) -> char
 {
-	return [u8; 1]
-}*/
+	c2str(ch).chars().nth(0).expect("Ungültiges Zeichen")
+}
+
+// Event Testing Funktion
+#[no_mangle]
+pub unsafe extern "C" fn event_test(handler: *mut EventHandler, len: usize, data: *const C_Param)
+{
+	println!("Länge {}", len);
+
+	let vector = param_to_vec(data, len);
+
+	//let mut ptr = data;
+	for s in vector
+	{
+		//let slice = ptr.read();
+		//let s = std::str::from_utf8(slice.into()).unwrap();
+		//ptr = ptr.offset(1);
+		println!("String: {}", s);
+	}
+
+	let arg1: C_Param;
+	let arg2: C_Param;
+	{
+		let str = "Ausgabe Arg 1";
+		arg1 = C_Param::from_str(str);
+
+		let str = "Ausgabe Argument 2";
+		arg2 = C_Param::from_str(str);
+	}
+
+	let signal = Signal::raw("Text Event Type\0", generateUID(), vec![arg1, arg2]);
+	handle(handler).sender().lock().unwrap().send(signal).ok();
+
+	//let str = "Ausgabe Text\0".to_string();
+
+	//let ptr = Box::into_raw(Box::new(str.as_bytes())) as *const u8;
+	//let slice = C_Slice {ptr, len: 12};
+
+	//let mut slice = out.read();
+	//slice.ptr = ptr;
+
+	/*let s = slice::from_raw_parts(data, len1).clone().as_ptr() as *mut c_char;
+	let str = CString::from_raw(s);
+	let ptr = str.as_ptr();// slice::from_raw_parts(data, len1);
+	println!("{}", ptr as usize)*/
+
+	//str1.replace();
+	//let n = str1.offset(len1 - 1);
+	//n.write(65);
+	
+}
+
+/*
+#[no_mangle]
+pub unsafe extern "C" fn signal_arg(ptr: *const C_Param, idx: isize) -> C_Param
+{
+	ptr.offset(idx).read()
+}
+*/
 
 #[no_mangle]
 pub unsafe extern "C" fn new_event_handler() -> *const EventHandler
 {
 	env_logger::try_init().ok();
-	
-	let handler = EventHandler::new();
-	let boxed = Box::new(handler);
-    Box::into_raw(boxed)
+    Box::into_raw(Box::new(EventHandler::new()))
 }
 
 #[no_mangle]
@@ -183,24 +127,18 @@ pub unsafe extern "C" fn start_listen(hptr: *mut EventHandler, sptr: *mut Screen
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn pull(ptr: *mut EventHandler, t: f32) -> Event
+pub unsafe extern "C" fn pull(ptr: *mut EventHandler, t: f32) -> Signal
 {
 	let timeout = if t > 0.0 { Some(time::Duration::from_millis((t * 1000.0) as u64))} else {None};
-	
+
 	let handler = handle(ptr);
 	match handler.poll(timeout)
 	{
-		Ok(evt) => {
-			if evt.extra != 0
-			{
-				handler.extra_data = Some(Box::from_raw(evt.extra as *mut EventExtra));
-			}
-			return evt;
-		}
+		Ok(sig) => { return sig; }
 
 		Err(e) => {
 			eprintln!("Event Error {}", e);
-			return Event::default();
+			return Signal::default();
 		}
 	}
 }
@@ -208,6 +146,7 @@ pub unsafe extern "C" fn pull(ptr: *mut EventHandler, t: f32) -> Event
 #[no_mangle]
 pub extern "C" fn create_screen(fontsize: u32, handler: *mut EventHandler) -> UIDHandle<ScreenComponent>
 {
+	assert!(fontsize > 1);
 	let mut screen = ScreenComponent::new(fontsize);
 	unsafe
 	{
@@ -245,7 +184,7 @@ pub unsafe extern "C" fn bind_screen(gPtr: *mut GraphicHandle, sPtr: *mut Screen
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn destroy(ptr: *mut ScreenComponent)
+pub unsafe extern "C" fn destroy_screen(ptr: *mut ScreenComponent)
 {
 	if !ptr.is_null() { Box::from_raw(ptr); }
 }
@@ -263,33 +202,29 @@ pub unsafe extern "C" fn background(ptr: *mut GraphicHandle, col: Color)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn fill(ptr: *mut GraphicHandle, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char)
+pub unsafe extern "C" fn fill(ptr: *mut GraphicHandle, x: i32, y: i32, w: i32, h: i32, ch: *const c_char)
 {
-	let char = CStr2Char(cstr);
 	let handle = handle(ptr);
-
 	handle.exec(|buffer| {
-		buffer.fill(x, y, w, h, char, handle.fg, handle.bg);
+		buffer.fill(x, y, w, h, c2char(ch), handle.fg, handle.bg);
 	});
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn write_text(ptr: *mut GraphicHandle, x: i32, y: i32, cstr: *const c_char)
 {
-	let text = CStr::from_ptr(cstr).to_str().expect("Ungültige Zeichen");
 	let handle = handle(ptr);
 	handle.exec(|buffer| {
-		buffer.writeText(x, y, &text, handle.fg, handle.bg);
+		buffer.writeText(x, y, &c2str(cstr), handle.fg, handle.bg);
 	});
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn write(ptr: *mut GraphicHandle, x: i32, y: i32, cstr: *const c_char)
+pub unsafe extern "C" fn write(ptr: *mut GraphicHandle, x: i32, y: i32, ch: *const c_char)
 {
-	let char = CStr2Char(cstr);
 	let handle = handle(ptr);
 	handle.exec(|buffer| {
-		buffer.write(x, y, char, handle.fg, handle.bg);
+		buffer.write(x, y, c2char(ch), handle.fg, handle.bg);
 	});
 }
 
@@ -304,7 +239,6 @@ pub unsafe extern "C" fn set_size(ptr: *mut GraphicHandle, width: u32, height: u
 {
 	assert!(width > 0);
 	assert!(height > 0);
-
 	handle(ptr).resize_screen(width, height);
 }
 
@@ -353,24 +287,21 @@ pub unsafe extern "C" fn buf_clone(ptr: *mut Buffer) -> *mut Buffer
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn buf_fill(ptr: *mut Buffer, x: i32, y: i32, w: i32, h: i32, cstr: *const c_char, fg: Color, bg: Color)
+pub unsafe extern "C" fn buf_fill(ptr: *mut Buffer, x: i32, y: i32, w: i32, h: i32, ch: *const c_char, fg: Color, bg: Color)
 {
-	let char = CStr2Char(cstr);
-	handle(ptr).fill(x, y, w, h, char, fg.clone(), bg.clone());
+	handle(ptr).fill(x, y, w, h, c2char(ch), fg.clone(), bg.clone());
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn buf_write(ptr: *mut Buffer, x: i32, y: i32, cstr: *const c_char, fg: Color, bg: Color)
 {
-	let text = CStr::from_ptr(cstr).to_str().expect("Ungültige Zeichen");
-	handle(ptr).writeText(x, y, text, fg.clone(), bg.clone());
+	handle(ptr).writeText(x, y, c2str(cstr), fg.clone(), bg.clone());
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn buf_set(ptr: *mut Buffer, x: i32, y: i32, cstr: *const c_char, fg: Color, bg: Color)
+pub unsafe extern "C" fn buf_set(ptr: *mut Buffer, x: i32, y: i32, ch: *const c_char, fg: Color, bg: Color)
 {
-	let char = CStr2Char(cstr);
-	handle(ptr).write(x, y, char, fg.clone(), bg.clone());
+	handle(ptr).write(x, y, c2char(ch), fg.clone(), bg.clone());
 }
 
 #[no_mangle]
@@ -378,20 +309,22 @@ pub unsafe extern "C" fn buf_get(ptr: *mut Buffer, x: u32, y: u32) -> BufferCell
 {
 	let buffer = handle(ptr);
 	let idx = x as usize + y as usize * buffer.width as usize;
-	let char_ptr = Box::into_raw(Box::new(buffer.chars[idx].to_string()));
-	//let char_ptr = buffer.chars[idx].to_string().as_ptr();
+
+	let mut char = [0; 4];
+	let len = buffer.chars[idx].encode_utf8(&mut char).len();
 
 	BufferCell{
-		char: char_ptr,
+		char,
+		len,
 		fg: buffer.foreground[idx].clone(),
 		bg: buffer.background[idx].clone(),
 	}
 }
 
 #[no_mangle]
-pub extern "C" fn create_network(port_start: u16, handler: *mut EventHandler) -> UIDHandle<NetworkComponent>
+pub extern "C" fn create_network(port_start: u16, buffer_size: usize, handler: *mut EventHandler) -> UIDHandle<NetworkComponent>
 {
-	let mut network = NetworkComponent::new(port_start);
+	let mut network = NetworkComponent::new(port_start, buffer_size);
 	unsafe
 	{
 		if handler.is_null()
@@ -425,16 +358,86 @@ pub unsafe extern "C" fn close_all_ports(ptr: *mut NetworkComponent)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn send_message(ptr: *mut NetworkComponent, reciever: *const c_char, port: u16, data: *const u8, len: usize)
+//pub unsafe extern "C" fn send_message(ptr: *mut NetworkComponent, reciever: *const c_char, port: u16, data: *const u8, len: usize)
+pub unsafe extern "C" fn send_message(ptr: *mut NetworkComponent, reciever: *const c_char, port: u16, data: *const C_Param, len: usize)
 {
-	let reciever_str = CStr::from_ptr(reciever).to_str().expect("Ungültige Zeichen");
-	let buf = slice::from_raw_parts(data, len);
-	handle(ptr).send(reciever_str, port, buf);
+	handle(ptr).send(c2str(reciever), port, param_to_vec(data, len));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn broadcast_message(ptr: *mut NetworkComponent, port: u16, data: *const u8, len: usize)
+//pub unsafe extern "C" fn broadcast_message(ptr: *mut NetworkComponent, port: u16, data: *const u8, len: usize)
+pub unsafe extern "C" fn broadcast_message(ptr: *mut NetworkComponent, port: u16, data: *const C_Param, len: usize)
 {
-	let buf = slice::from_raw_parts(data, len);
-	handle(ptr).broadcast(port, buf);
+	handle(ptr).broadcast(port, param_to_vec(data, len));
+}
+
+
+#[no_mangle]
+pub unsafe extern "C" fn create_filesystem(root_path: *const c_char, name: *const c_char, handler: *mut EventHandler) -> *mut Filesystem
+{
+	let mut fs = Filesystem::new(c2str( root_path), c2str(name));
+	if handler.is_null()
+	{
+		fs.listen(None);
+	}
+	else
+	{
+		fs.listen(Some((*handler).new_emitter(UID::default())));
+	}
+	Box::into_raw(Box::new(fs))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn mount(ptr: *mut Filesystem, c_device: *const c_char, c_mount: *const c_char) -> bool
+{
+	handle(ptr).mount(c2str(c_device), c2str(c_mount))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn unmount(ptr: *mut Filesystem, c_device: *const c_char) -> bool
+{
+	handle(ptr).unmount(c2str(c_device))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fs_exists(ptr: *mut Filesystem, c_path: *const c_char) -> bool
+{
+	handle(ptr).exists(c2str(c_path))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fs_is_file(ptr: *mut Filesystem, c_path: *const c_char) -> bool
+{
+	handle(ptr).is_file(c2str(c_path))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fs_is_dir(ptr: *mut Filesystem, c_path: *const c_char) -> bool
+{
+	handle(ptr).is_dir(c2str(c_path))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fs_remove(ptr: *mut Filesystem, c_path: *const c_char) -> bool
+{
+	handle(ptr).remove(c2str(c_path))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fs_rename(ptr: *mut Filesystem, c_from: *const c_char, c_to: *const c_char) -> bool
+{
+	handle(ptr).rename(c2str(c_from),c2str(c_to))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fs_create_dir(ptr: *mut Filesystem, c_path: *const c_char) -> bool
+{
+	handle(ptr).create_dir(c2str(c_path))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn fs_childs(ptr: *mut Filesystem, c_path: *const c_char) -> C_Array
+{
+	let vec = handle(ptr).childs(c2str(c_path));
+	C_Array::new(&vec)
 }

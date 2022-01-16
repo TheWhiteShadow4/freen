@@ -1,9 +1,13 @@
 
-use std::{net::{Ipv4Addr, SocketAddrV4, UdpSocket}, thread, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, collections::HashMap};
+use core::slice;
+use std::{net::{Ipv4Addr, SocketAddrV4, UdpSocket}, thread, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, collections::HashMap, alloc::Layout};
 
+use nanoserde::SerBin;
 use rand::Rng;
 
-use crate::{EventEmitter, component::{UID, Component, generateUID}, Event, EVENT_NETWORK_MESSAGE, EventExtra};
+use crate::{EventEmitter, component::{UID, Component, generateUID, UID_SIZE}, Signal, events::C_Param};
+
+const EVENT_NETWORK_MESSAGE: &str = "NetworkMessage\0";
 
 struct SocketListener
 {
@@ -15,6 +19,7 @@ pub struct NetworkComponent
 {
 	id: UID,
 	port_Start: u16,
+	buffer_size: usize,
 	sockets: HashMap<u16, Arc<SocketListener>>,
 	sender_socket: Option<UdpSocket>,
 	emitter: Arc<Mutex<Option<EventEmitter>>>,
@@ -22,23 +27,27 @@ pub struct NetworkComponent
 
 impl NetworkComponent
 {
-	pub fn new(port_Start: u16) -> Self
+	pub fn new(port_Start: u16, buffer_size: usize) -> Self
 	{
 		Self
 		{
 			id: generateUID(),
 			port_Start,
+			buffer_size,
 			sockets: HashMap::new(),
 			sender_socket: None,
 			emitter: Arc::default(),
 		}
 	}
 
+
 	pub fn open_port(&mut self, port: u16) -> bool
 	{
 		if self.emitter.lock().unwrap().is_none() { return false; }
 
-		let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port + self.port_Start);
+		let port_Start = self.port_Start;
+		let buffer_size = self.buffer_size;
+		let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port + port_Start);
 		match UdpSocket::bind(addr)
 		{
 			Ok(socket) => {
@@ -46,21 +55,44 @@ impl NetworkComponent
 				self.sockets.insert(port, listener.clone());
 				let emitter = self.emitter.clone();
 				thread::spawn(move || {
-					let mut buf: EventExtra = [0; 1<<16];
+					let mut buf = alloc_buffer(buffer_size);
 					while listener.active.load(Ordering::Relaxed) == true
 					{
 						match listener.socket.recv_from(&mut buf)
 						{
-							Ok((bytes, _addr)) => {
-								//println!("Empfange {} bytes von {}", bytes, addr.port());
+							Ok((_size, _addr)) => {
+								let sender_uid = uid_from_buffer(&buf, 0);
+
+								let mut offset: usize = UID_SIZE;
+								let data: Vec<String> = nanoserde::DeBin::de_bin(&mut offset, &buf).unwrap();
+
+								let mut params = Vec::<C_Param>::new();
+								params.push(C_Param::from_str(&sender_uid));
+								params.push(C_Param::from(&port, true));
+
+								data.iter().for_each(|d| params.push(C_Param::from_str(&d)));
+
 								let mut lock = emitter.lock().unwrap();
 								let e = lock.as_mut().unwrap();
-								let ptr = Box::into_raw(Box::new(buf)) as usize;
-								e.send(Event::new(EVENT_NETWORK_MESSAGE, e.owner(), port.into(), 0, bytes.try_into().unwrap(), ptr));
+								
+								let signal = Signal::raw(EVENT_NETWORK_MESSAGE, e.owner(), params);
+
+								/*println!("len: {}", signal.len);
+								for i in 0..(signal.len)
+								{
+									let param = signal.args[i];
+									println!("offset: {} len {}", i, param.len);
+									//std::slice::from_raw_parts(param.ptr, param.len).;
+
+									println!("Daten: {}: {}", i, param.ptr as usize);
+								}*/
+
+								e.send(signal);
 							},
 							Err(e) => { eprintln!("{}", e); }
 						}
 					}
+					drop_buffer(&mut buf, buffer_size);
 				});
 				true
 			},
@@ -89,10 +121,8 @@ impl NetworkComponent
 		self.sockets.clear();
 	}
 
-	pub fn send(&mut self, _reciever: &str, port: u16, buf: &[u8])
+	pub fn send(&mut self, _reciever: &str, port: u16, data: Vec::<String>)
 	{
-		//println!("Sende zu {}", port);
-
 		if self.sender_socket.is_none()
 		{
 			self.create_sender_socket();
@@ -102,7 +132,12 @@ impl NetworkComponent
 		{
 			let rl_port = port + self.port_Start;
 			let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, rl_port);
-			let result = socket.send_to(buf, addr);
+
+			let mut buffer = Vec::<u8>::default();
+			buffer.append(&mut self.id.to_vec());
+			data.ser_bin(&mut buffer);
+
+			let result = socket.send_to(&buffer, addr);
 			match result
 			{
 				Ok(_len) => {},
@@ -119,9 +154,9 @@ impl NetworkComponent
 		self.sender_socket = UdpSocket::bind(addr).ok();
 	}
 
-	pub fn broadcast(&mut self, port: u16, buf: &[u8])
+	pub fn broadcast(&mut self, port: u16, data: Vec::<String>)
 	{
-		self.send("", port, buf);
+		self.send("", port, data);
 	}
 }
 
@@ -133,4 +168,29 @@ impl Component for NetworkComponent
 	{
 		self.emitter = Arc::new(Mutex::new(emitter));
     }
+}
+
+fn alloc_buffer(size: usize) -> &'static mut [u8]
+{
+	unsafe
+	{
+		let layout = Layout::array::<u8>(size).expect("Invalid Buffer size.");
+		let a = std::alloc::alloc(layout);
+		slice::from_raw_parts_mut(a, size)
+	}
+}
+
+fn drop_buffer(buffer: &mut [u8], size: usize)
+{
+	unsafe
+	{
+		let layout = Layout::array::<u8>(size).expect("Invalid Buffer size.");
+		std::alloc::dealloc(buffer.as_mut_ptr(), layout);
+	}
+}
+
+#[inline]
+fn uid_from_buffer(buf: &[u8], off: usize) -> String
+{
+	unsafe { String::from_utf8_unchecked(buf[off..off+UID_SIZE].to_owned()) }
 }

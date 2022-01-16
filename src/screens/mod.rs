@@ -8,6 +8,7 @@ pub mod screen;
 mod grid;
 mod text;
 
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Color

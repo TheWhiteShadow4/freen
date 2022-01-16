@@ -77,7 +77,7 @@ The comments `- $ DEV-ONLY $` mark the lines as relevant for development only.
 
 Freen can be configured via the global object FREEN.
 
-- fontsize: Font size for Freen Fenter.
+- fontsize: Font size for Freen window.
 - portStart: Port mapping offset for network cards.
 
 ## Differences to FIN

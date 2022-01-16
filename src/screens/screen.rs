@@ -15,6 +15,14 @@ use winit::{
 };
 use winit::event::{WindowEvent, ElementState, MouseButton};
 
+
+const EVENT_WINDOW_CLOSED: &str = "WindowClosed\0";
+const EVENT_MOUSE_DOWN: &str = "OnMouseDown\0";
+const EVENT_MOUSE_UP: &str = "OnMouseUp\0";
+const EVENT_MOUSE_MOVE: &str = "OnMouseMove\0";
+const EVENT_KEY_DOWN: &str = "OnKeyDown\0";
+const EVENT_KEY_UP: &str = "OnKeyUp\0";
+
 pub struct ScreenComponent
 {
 	id: UID,
@@ -238,24 +246,26 @@ impl InputHelper
 				button,
 				..
 			} => {
-				em.send(Event::new(
+				em.send(Signal::numArgs(
 					EVENT_MOUSE_DOWN,
-					em.owner(),
+					em.owner(), vec![
 					self.mouseX,
 					self.mouseY,
-					mouse_button_to_int(button), 0));
+					mouse_button_to_int(button)
+				]));
 			},
 			WindowEvent::MouseInput {
 				state: ElementState::Released,
 				button,
 				..
 			} => {
-				em.send(Event::new(
+				em.send(Signal::numArgs(
 					EVENT_MOUSE_UP,
-					em.owner(),
+					em.owner(), vec![
 					self.mouseX,
 					self.mouseY,
-					mouse_button_to_int(button), 0));
+					mouse_button_to_int(button)
+				]));
 			},
 			WindowEvent::CursorMoved {
 				position,
@@ -266,12 +276,12 @@ impl InputHelper
 				if mouseX == self.mouseX && mouseY == self.mouseY {return;}
 				self.mouseX = mouseX;
 				self.mouseY = mouseY;
-				em.send(Event::new(
-						EVENT_MOUSE_MOVE,
-						em.owner(),
-						self.mouseX,
-						self.mouseY,
-						0, 0));
+				em.send(Signal::numArgs(
+					EVENT_MOUSE_MOVE,
+					em.owner(), vec![
+					self.mouseX,
+					self.mouseY
+				]));
 			},
 			WindowEvent::KeyboardInput {
 				input,
@@ -287,7 +297,12 @@ impl InputHelper
 					Some(k) => k as i32,
 					None => 0
 				};
-				em.send(Event::new(eventType, em.owner(), input.scancode as i32, key, self.modifiers, 0));
+				em.send(Signal::numArgs(
+					eventType,
+					em.owner(), vec![
+					input.scancode as i32,
+					key, self.modifiers
+				]));
 			},
 			WindowEvent::ModifiersChanged(modifiers) => {
 				let mut bits = 0i32;
@@ -301,7 +316,7 @@ impl InputHelper
 			},
 			WindowEvent::CloseRequested => {
 				self.close = true;
-				em.send(Event::noArgs(EVENT_WINDOW_CLOSED, em.owner()));
+				em.send(Signal::noArgs(EVENT_WINDOW_CLOSED, em.owner()));
 			},
 			_ => {}
 		}

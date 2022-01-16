@@ -18,9 +18,9 @@ function Test_FIN_API:TestClasses()
 	end)
 
 	local cls = findClass("TestComponent")
-	-- Die eigentliche Klasse wird nicht von defineClass zurückgegeben.
+	-- Die eigentliche Klasse wird nicht von defineClass zurückgegeben,
 	lu.assertNotEquals(cls, testComponent)
-	-- Enthält diese aber als Typ
+	-- enthält diese aber als Typ.
 	lu.assertEquals(cls, testComponent.getType())
 	
 	local array = computer.getPCIDevices(cls)
@@ -35,7 +35,7 @@ function Test_FIN_API:TestClasses()
 	lu.assertEquals(#array, 1)
 	-- Die neue Instanz wird im Array gespeichert und ändert sich nicht.
 	lu.assertEquals(array[1], inst)
-	-- Der Konstuktor wurde aufgerufen.
+	-- Der Konstuktor wurde aufgerufen. Unser flag ist true.
 	lu.assertTrue(inst.flag)
 	-- Da die Klasse von Component erbt, hat sie eine ID.
 	lu.assertNotNil(inst.id)
@@ -78,9 +78,9 @@ function Test_FIN_API:TestComponents()
 	lu.assertFunction(proxies[1].getPipeConnectors)
 	lu.assertFunction(proxies[1].getInventories)
 	lu.assertFunction(proxies[1].getNetworkConnectors)
-	--proxies[1]:getPowerConnectors()
-	
-	--print(dump(proxies[1]:getPowerConnectors()))
+	-- component.proxy erlaubt auch Lazy Arrays
+	comp = component.proxy(component.findComponent("Blub"))[1]
+	lu.assertNotNil(comp, nil)
 end
 
 function Test_FIN_API:TestGPU()
@@ -151,26 +151,59 @@ function Test_FIN_API:TestEvents()
 end
 
 function Test_FIN_API:TestFilesystem()
+	local dev1 = "4D92F19549A229990C9F5CBEFC69D414"
+	local dev2 = "C963C1914AAB87A8558D4C9E324CCC99"
+	
 	lu.assertError(filesystem.initFileSystem, "")
+	
+	filesystem.initFileSystem("/dev")
+	lu.assertFalse(filesystem.mount(dev1, "/"))
+	lu.assertFalse(filesystem.mount("/dev"..dev1, "/"))
+	lu.assertTrue(filesystem.mount("dev/"..dev1, "/"))
+	-- Korrekte Syntax aber bereits gemaunted
+	lu.assertFalse(filesystem.mount("/dev/"..dev1, "/"))
+	-- Bereits verwendeter Mounpoint
+	lu.assertFalse(filesystem.mount("/dev/"..dev2, "/"))
+	lu.assertTrue(filesystem.mount("dev/"..dev2, "/u"))
+	
+	lu.assertTrue(filesystem.exists("/u/test.dat"))
+	lu.assertTrue(filesystem.exists("/test.txt"))
+	
+	lu.assertTrue(filesystem.unmount("dev/"..dev2))
+	
+	lu.assertTrue(filesystem.isFile("test.txt"))
+	-- Nicht mehr gemounted
+	lu.assertFalse(filesystem.isFile("/u/test.txt"))
+	lu.assertFalse(filesystem.isDir("/test.txt"))
+	
+	lu.assertTrue(filesystem.createDir("/ordner2"))
+	lu.assertTrue(filesystem.rename("/ordner2", "/ordner3"))
+	lu.assertTrue(filesystem.isDir("/ordner3"))
+	lu.assertTrue(filesystem.remove("/ordner3"))
+	local e = event.pull()
+	lu.assertEquals(e, "FileSystemUpdate")
 end
 
 function Test_FIN_API:TestNetwork()
-	local card = component.proxy(component.findComponent("NetworkCard")[1])
+	local cards = component.proxy(component.findComponent(findClass("NetworkCard")))
+	local sender = cards[1]
+	local reciever = cards[3] -- mal was neues^^
 	local port = 1
-	card:open(port)
+	reciever:open(port)
 	-- Reciever muss angegeben werden.
-	lu.assertError(card.send, nil, port, "Hallo 1")
+	lu.assertError(sender.send, nil, port, "Hallo 1")
 	-- Port darf nicht negativ sein.
-	lu.assertError(card.send, "", -1, "Hallo 1")
-	card:send("", port, "Hallo 2")
-	local e,c,r,p,m = event.pull(0.1)
+	lu.assertError(sender.send, "", -1, "Hallo 1")
+	-- Freen interessiert der Empänger nicht, wir geben ihn trotzdem an.
+	sender:send(reciever.id, port, "Hallo 2", "M\02")
+	local e,c,s,p,m1,m2 = event.pull(0.1)
 	lu.assertEquals(e, "NetworkMessage")
-	lu.assertEquals(c, card)
-	-- TODO: Bisher wird der Absender noch nicht mitgesendet.
-	lu.assertNotNil(r)
+	lu.assertEquals(c, reciever)
+	lu.assertEquals(s, sender.id)
 	lu.assertEquals(p, port)
-	lu.assertEquals(m, "Hallo 2")
-	card:close(port)
+	lu.assertEquals(m1, "Hallo 2")
+	lu.assertEquals(m2, "M\02")
+	reciever:close(port)
 end
 
 local runner = lu.LuaUnit.new()
